@@ -36,7 +36,8 @@ def test_random_cases():
 
 
 def test_determinism():
-    params = [4.5678, -9.1011, 12.1314]
+    # params = [4.5678, -9.1011, 12.1314, 5.123, 1.234]
+    params = [4.5678, -9.1011, 12.1314, 5.123]
     P1 = encode_reals(params)
     P2 = encode_reals(params)
 
