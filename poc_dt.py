@@ -9,6 +9,7 @@ from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
 from utils.ecops.koblitz import encode_reals, decode_reals
+from utils.schnorr.signature import schnorr_signature_component
 
 load_dotenv()
 
