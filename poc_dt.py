@@ -102,6 +102,20 @@ class CommunicationManager:
         """
         Communicates with the edge server to relay encrypted data.
         """
+        
+        q = self.key_manager.q
+        scaled_data = [int(round(x * 10**6)) for x in data]
+        e = 1234
+        schnorr_outputs = []
+        for value in scaled_data:
+            ki = secrets.randbelow(q - 1) + 1
+            s = schnorr_signature_component(ki, e, value, q)
+            schnorr_outputs.append(s)
+        secrect_key = self.key_manager.private_key
+        kr = secrets.randbelow(q - 1) + 1
+        sr = schnorr_signature_component(kr, e, secrect_key, q)
+        schnorr_outputs.append(sr)
+        
         cm = CryptoManager(self.key_manager)
         c_t, c_m, hM = cm.encrypt_data(data)
 
