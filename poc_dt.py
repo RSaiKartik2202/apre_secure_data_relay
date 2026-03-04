@@ -105,14 +105,17 @@ class CommunicationManager:
         
         q = self.key_manager.q
         scaled_data = [int(round(x * 10**6)) for x in data]
-        e = 1234
+        k_values = []
+        for _ in scaled_data:
+            k_values.append(secrets.randbelow(q - 1) + 1)
         schnorr_outputs = []
-        for value in scaled_data:
-            ki = secrets.randbelow(q - 1) + 1
+        e = 1234
+        for ki, value in zip(k_values, scaled_data):
             s = schnorr_signature_component(ki, e, value, q)
             schnorr_outputs.append(s)
         secrect_key = self.key_manager.private_key
         kr = secrets.randbelow(q - 1) + 1
+        k_values.append(kr)
         sr = schnorr_signature_component(kr, e, secrect_key, q)
         schnorr_outputs.append(sr)
         
