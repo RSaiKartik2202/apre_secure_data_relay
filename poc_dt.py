@@ -10,6 +10,7 @@ from fastecdsa import curve
 from fastecdsa.point import Point
 from utils.ecops.koblitz import encode_reals, decode_reals
 from utils.schnorr.signature import schnorr_signature_component
+from utils.pedersen.committment import vector_commit
 
 load_dotenv()
 
@@ -119,6 +120,7 @@ class CommunicationManager:
         sr = schnorr_signature_component(kr, e, secrect_key, q)
         schnorr_outputs.append(sr)
         
+        C = vector_commit(data, self.key_manager.private_key)
         cm = CryptoManager(self.key_manager)
         c_t, c_m, hM = cm.encrypt_data(data)
 
@@ -177,6 +179,8 @@ class CommunicationManager:
         self.decrypt_and_verify(payload)
 
     def decrypt_and_verify(self, data):
+        # correctness logic to be added for pedersen vector commitment and schnorr signature
+        # modify this to handle the new data format after adding pedersen vector commitment and schnorr signature
         Tproxy = data["Tproxy"]
         if abs(time.time() - Tproxy) > 10:
             print(f"[{poc_dt_id}] Dropping message: stale timestamp")
