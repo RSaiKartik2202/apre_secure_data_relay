@@ -128,11 +128,11 @@ class EdgeServer:
             dst_id,
             CT_prime,
             CM,
-            data["hM"],
+            data,
             time.time()
         )
 
-    def forward_to_destination(self, dst_id, CT_prime, CM, hM, Tproxy):
+    def forward_to_destination(self, dst_id, CT_prime, CM, data, Tproxy):
         host, port = DESTINATION_REGISTRY[dst_id]
 
         payload = {
@@ -145,8 +145,12 @@ class EdgeServer:
                 "x": CM.x,
                 "y": CM.y
             },
-            "hM": hM,
-            "Tproxy": Tproxy
+            "hM": data["hM"],
+            "Tproxy": Tproxy,
+            "R": data["R"],
+            "u": data["u"],
+            "v": data["v"],
+            "C": data["C"]
         }
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
