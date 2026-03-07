@@ -1,5 +1,6 @@
 from fastecdsa import curve
 from fastecdsa.point import Point
+from decimal import Decimal
 import hashlib
 import secrets
 
@@ -22,8 +23,8 @@ def vector_commit(values,r):
     C = None
     for i, v in enumerate(values, start=1):
         Gi = derive_Gi(i)
-        v = v * PRECISION
-        term = v * Gi
+        v_int = int(Decimal(str(v)) * PRECISION)
+        term = v_int * Gi
         C = term if C is None else C + term
 
     C = C + r * H
@@ -33,13 +34,13 @@ def vector_verify(values, r, C):
     C2 = None
     for i, v in enumerate(values, start=1):
         Gi = derive_Gi(i)
-        v = v * precision
-        term = v * Gi
+        v_int = int(Decimal(str(v)) * PRECISION)
+        term = v_int * Gi
         C2 = term if C2 is None else C2 + term
     C2 = C2 + r * H
     return C2 == C
 
-values = [5, 12, 20]
+values = [5.235, 12.146, 20.457]
 secret_key=secrets.randbelow(n)
 C = vector_commit(values,secret_key)
 
