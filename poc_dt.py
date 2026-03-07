@@ -9,6 +9,7 @@ from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
 from utils.ecops.koblitz import encode_reals, decode_reals
+from utils.schnorr.signature import schnorr_signature_component
 from utils.pedersen.committment import vector_commit
 
 load_dotenv()
@@ -102,6 +103,23 @@ class CommunicationManager:
         """
         Communicates with the edge server to relay encrypted data.
         """
+        
+        q = self.key_manager.q
+        scaled_data = [int(round(x * 10**6)) for x in data]
+        k_values = []
+        for _ in scaled_data:
+            k_values.append(secrets.randbelow(q - 1) + 1)
+        schnorr_outputs = []
+        e = 1234
+        for ki, value in zip(k_values, scaled_data):
+            s = schnorr_signature_component(ki, e, value, q)
+            schnorr_outputs.append(s)
+        secrect_key = self.key_manager.private_key
+        kr = secrets.randbelow(q - 1) + 1
+        k_values.append(kr)
+        sr = schnorr_signature_component(kr, e, secrect_key, q)
+        schnorr_outputs.append(sr)
+        
         C = vector_commit(data, self.key_manager.private_key)
         cm = CryptoManager(self.key_manager)
         c_t, c_m, hM = cm.encrypt_data(data)
