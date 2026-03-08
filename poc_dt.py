@@ -15,12 +15,12 @@ from decimal import Decimal
 
 load_dotenv()
 
-DT_CONFIG = {
-    "DT_1": {"port": 8085, "ta_port": 8081},
-    "DT_2": {"port": 8090, "ta_port": 8082},
-}
-
 poc_dt_id = os.getenv("DT_ID")
+KEYS_PORT = int(os.getenv("KEYS_PORT", 8080))
+DATA_PORT = int(os.getenv("DATA_PORT", 8081))
+TA_IP = os.getenv("TA_IP")
+EDGE_IP = os.getenv("EDGE_IP")
+EDGE_PORT = int(os.getenv("EDGE_PORT", 8082))
 
 PRECISION = 10**6
 
@@ -33,16 +33,19 @@ class KeyManager:
         self.P = self.curve.G          # Generator point
 
 
-    def recv_key_pair(self,HOST = "127.0.0.1"):
+    def recv_key_pair(self):
         """
         Receives the public-private key pair from trusted authority.
         """
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-            PORT = DT_CONFIG[poc_dt_id]["ta_port"]
-            server.bind((HOST, PORT))
+            server.bind(("0.0.0.0", KEYS_PORT))
             server.listen(1)
             print(f"[{poc_dt_id}] Waiting for key pair from Trusted Authority...")
             conn, addr = server.accept()
+            if addr[0] != TA_IP:
+                print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                conn.close()
+                return
             with conn:
                 print(f"[{poc_dt_id}] Connected by", addr)
                 buffer = ""
@@ -168,7 +171,7 @@ class CommunicationManager:
         }
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            s.connect(("localhost", EDGE_PORT))
+            s.connect((EDGE_IP, EDGE_PORT))
         except ConnectionRefusedError:
             print(f"[{poc_dt_id}] Edge server not available")
             return
@@ -176,15 +179,18 @@ class CommunicationManager:
         s.close()
         return
     
-    def start(self, HOST="127.0.0.1"):
-        PORT = DT_CONFIG[poc_dt_id]["port"]
+    def start(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-            server.bind((HOST, PORT))
+            server.bind(("0.0.0.0", DATA_PORT))
             server.listen(5)
             print(f"[{poc_dt_id}] Listening for re-encrypted data...")
 
             while True:
                 conn, addr = server.accept()
+                if addr[0] != EDGE_IP:
+                    print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                    conn.close()
+                    continue
                 with conn:
                     self.handle_connection(conn, addr)
 
@@ -279,8 +285,6 @@ class CommunicationManager:
     
 
 if __name__ == "__main__":
-    if poc_dt_id not in DT_CONFIG:
-        raise ValueError("Set DT_ID environment variable to a valid digital twin ID (e.g., DT_1 or DT_2)")
     km = KeyManager()
     km.get_keys()
     sk = km.private_key

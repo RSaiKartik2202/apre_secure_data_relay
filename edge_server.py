@@ -9,24 +9,32 @@ from fastecdsa.point import Point
 load_dotenv()
 
 DESTINATION_REGISTRY = {
-    "DT_1": ("127.0.0.1", 8085),
-    "DT_2": ("127.0.0.1", 8090),
+    "DT_1": (os.getenv("DT_1_IP")),
+    "DT_2": (os.getenv("DT_2_IP")),
 }
+DATA_RECEIVE_PORT = int(os.getenv("DATA_PORT", 8082))
+DATA_FORWARD_PORT = int(os.getenv("DATA_FORWARD_PORT", 8081))
+KEYS_RECEIVE_PORT = int(os.getenv("KEYS_PORT", 8080))
+TA_IP = os.getenv("TA_IP")
 
 class KeyManager:
     def __init__(self):
         self.reenc_keys = {}
     
 
-    def recv_reencrypted_key(self, HOST="127.0.0.1", PORT=8083):
+    def recv_reencrypted_key(self):
         """
         Receives the re-encrypted key from trusted authority.
         """
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-            server.bind((HOST, PORT))
+            server.bind(("0.0.0.0", KEYS_RECEIVE_PORT))
             server.listen(1)
             print("[EDGE_SERVER] Waiting for re-encryption keys from Trusted Authority...")
             conn, addr = server.accept()
+            if addr[0] != TA_IP:
+                print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                conn.close()
+                return
             with conn:
                 print("[EDGE_SERVER] Connected by", addr)
                 buffer = ""
@@ -58,14 +66,12 @@ class KeyManager:
 
 
 class EdgeServer:
-    def __init__(self, reenc_keys, host="127.0.0.1", port=8084):
+    def __init__(self, reenc_keys):
         self.reenc_keys = reenc_keys
-        self.host = host
-        self.port = port
 
     def start(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-            server.bind((self.host, self.port))
+            server.bind(("0.0.0.0", DATA_RECEIVE_PORT))
             server.listen(5)
             print("[EDGE_SERVER] Listening for encrypted data...")
 
@@ -133,7 +139,7 @@ class EdgeServer:
         )
 
     def forward_to_destination(self, dst_id, CT_prime, CM, data, Tproxy):
-        host, port = DESTINATION_REGISTRY[dst_id]
+        dest_ip = DESTINATION_REGISTRY[dst_id]
 
         payload = {
             "curve": "secp256k1",
@@ -154,7 +160,7 @@ class EdgeServer:
         }
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((host, port))
+            s.connect((dest_ip, DATA_FORWARD_PORT))
             s.sendall((json.dumps(payload) + "\n").encode())
 
         print(f"[EDGE_SERVER] Forwarded re-encrypted data to {dst_id}")
