@@ -1,16 +1,18 @@
 from fastecdsa.curve import secp256k1
+from dotenv import load_dotenv
 import secrets
 import socket
 import json
 import os
 
+load_dotenv()
+
 DT_IDS = ["DT_1", "DT_2"]
 DT_REGISTRY = {
     "DT_1": os.getenv("DT_1_IP"),
     "DT_2": os.getenv("DT_2_IP"),
-    "DT_3": os.getenv("DT_3_IP"),
 }
-KEYS_PORT = os.getenv("KEYS_PORT", 8080)
+KEYS_PORT = int(os.getenv("KEYS_PORT", 8080))
 EDGE_IP = os.getenv("EDGE_IP")
 
 
@@ -44,6 +46,7 @@ class TA:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((recipient_ip, KEYS_PORT))
+            print(f"[TA] Connected to {recipient_ip}:{KEYS_PORT}. Sending keys...")
             s.sendall((json.dumps(key_json) + "\n").encode("utf-8"))
             print(f"[TA] Keys sent to {recipient_ip}:{KEYS_PORT}")
         except ConnectionRefusedError:
@@ -56,7 +59,7 @@ class TA:
 if __name__ == "__main__":
     ta = TA()
     dt_keys = {}
-    for dt_id, ip in DT_IDS.items():
+    for dt_id in DT_IDS:
         sk, pk = ta.generate_key_pair()
         dt_keys[dt_id] = (sk, pk)
         ta.send_keys(
@@ -69,7 +72,7 @@ if __name__ == "__main__":
                     "y": pk.y
                 }
             },
-            ip
+            DT_REGISTRY[dt_id]
         )
 
     reenc_payload = {"reenc_keys": []}

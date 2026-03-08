@@ -12,8 +12,8 @@ DESTINATION_REGISTRY = {
     "DT_1": (os.getenv("DT_1_IP")),
     "DT_2": (os.getenv("DT_2_IP")),
 }
-DATA_RECEIVE_PORT = int(os.getenv("DATA_PORT", 8082))
-DATA_FORWARD_PORT = int(os.getenv("DATA_FORWARD_PORT", 8081))
+DATA_RECEIVE_PORT = int(os.getenv("EDGE_PORT", 8082))
+DATA_FORWARD_PORT = int(os.getenv("DATA_PORT", 8081))
 KEYS_RECEIVE_PORT = int(os.getenv("KEYS_PORT", 8080))
 TA_IP = os.getenv("TA_IP")
 
@@ -31,10 +31,10 @@ class KeyManager:
             server.listen(1)
             print("[EDGE_SERVER] Waiting for re-encryption keys from Trusted Authority...")
             conn, addr = server.accept()
-            if addr[0] != TA_IP:
-                print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
-                conn.close()
-                return
+            # if addr[0] != TA_IP:
+            #     print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
+            #     conn.close()
+            #     return
             with conn:
                 print("[EDGE_SERVER] Connected by", addr)
                 buffer = ""
@@ -93,6 +93,7 @@ class EdgeServer:
                 break
 
         payload = json.loads(buffer.strip())
+        # print("[EDGE_SERVER] Received payload:", payload)
         self.process_payload(payload)
 
     def process_payload(self, data):
@@ -160,7 +161,9 @@ class EdgeServer:
         }
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            # print(f"[EDGE_SERVER] Connecting to {dst_id} at {dest_ip}:{DATA_FORWARD_PORT}...")
             s.connect((dest_ip, DATA_FORWARD_PORT))
+            # print(f"[EDGE_SERVER] Connected to {dst_id} at {dest_ip}:{DATA_FORWARD_PORT}. Forwarding re-encrypted data...")
             s.sendall((json.dumps(payload) + "\n").encode())
 
         print(f"[EDGE_SERVER] Forwarded re-encrypted data to {dst_id}")
