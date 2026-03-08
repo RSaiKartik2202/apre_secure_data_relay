@@ -42,10 +42,10 @@ class KeyManager:
             server.listen(1)
             print(f"[{poc_dt_id}] Waiting for key pair from Trusted Authority...")
             conn, addr = server.accept()
-            if addr[0] != TA_IP:
+            """if addr[0] != TA_IP:
                 print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
                 conn.close()
-                return
+                return"""""
             with conn:
                 print(f"[{poc_dt_id}] Connected by", addr)
                 buffer = ""
@@ -105,7 +105,7 @@ class CommunicationManager:
     def __init__(self, key_manager: KeyManager):
         self.key_manager = key_manager
 
-    def send_data_to_edge(self, data: bytes, dest_dt_id, EDGE_PORT = 8084):
+    def send_data_to_edge(self, data: bytes, dest_dt_id):
         """
         Communicates with the edge server to relay encrypted data.
         """
@@ -187,10 +187,10 @@ class CommunicationManager:
 
             while True:
                 conn, addr = server.accept()
-                if addr[0] != EDGE_IP:
+                """if addr[0] != EDGE_IP:
                     print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
                     conn.close()
-                    continue
+                    continue"""
                 with conn:
                     self.handle_connection(conn, addr)
 
