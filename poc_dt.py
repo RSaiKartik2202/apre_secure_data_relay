@@ -42,10 +42,10 @@ class KeyManager:
             server.listen(1)
             print(f"[{poc_dt_id}] Waiting for key pair from Trusted Authority...")
             conn, addr = server.accept()
-            # if addr[0] != TA_IP:
-            #     print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
-            #     conn.close()
-            #     return
+            """if addr[0] != TA_IP:
+                print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                conn.close()
+                return"""""
             with conn:
                 print(f"[{poc_dt_id}] Connected by", addr)
                 buffer = ""
@@ -187,10 +187,10 @@ class CommunicationManager:
 
             while True:
                 conn, addr = server.accept()
-                # if addr[0] != EDGE_IP:
-                #     print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
-                #     conn.close()
-                #     continue
+                """if addr[0] != EDGE_IP:
+                    print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                    conn.close()
+                    continue"""
                 with conn:
                     self.handle_connection(conn, addr)
 
