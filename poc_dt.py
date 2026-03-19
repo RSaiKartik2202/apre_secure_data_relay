@@ -5,6 +5,7 @@ import secrets
 import hashlib
 import time
 import threading
+import random
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
@@ -296,7 +297,14 @@ if __name__ == "__main__":
     comms = CommunicationManager(km)
     comms.start_receiver_thread()
 
-    while True:
-        dest = input("Destination DT ID: ")
-        params = [4.5678, -9.1011, 12.1314, 5.123]
+    ITER_CNT = 5
+    dest = input("Destination DT ID: ")
+    for _ in range(ITER_CNT):
+        params = [round(random.randint(0, 10000) / 100, 4) for _ in range(4)]
         comms.send_data_to_edge(params, dest)
+        time.sleep(5)
+
+    # while True:
+    #     dest = input("Destination DT ID: ")
+    #     params = [4.5678, -9.1011, 12.1314, 5.123]
+    #     comms.send_data_to_edge(params, dest)
