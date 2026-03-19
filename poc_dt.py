@@ -6,6 +6,7 @@ import hashlib
 import time
 import threading
 import random
+import csv
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
@@ -110,7 +111,7 @@ class CommunicationManager:
         """
         Communicates with the edge server to relay encrypted data.
         """
-        
+        start_comp = time.perf_counter()
         q = self.key_manager.q
         secrect_key = self.key_manager.private_key
         scaled_data = [int(Decimal(str(v))) * PRECISION for v in data]
@@ -178,6 +179,12 @@ class CommunicationManager:
             return
         s.sendall((json.dumps(payload) + "\n").encode())
         s.close()
+
+        end_comp = time.perf_counter()
+        total_time =  end_comp - start_comp
+        with open(f"{poc_dt_id}_timings_e_and_a.csv", "a", newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow([total_time])
         return
     
     def start(self):
@@ -196,6 +203,7 @@ class CommunicationManager:
                     self.handle_connection(conn, addr)
 
     def handle_connection(self, conn, addr):
+        self.start_time = time.perf_counter()
         print(f"[{poc_dt_id}] Connection from", addr)
         buffer = ""
 
@@ -275,6 +283,12 @@ class CommunicationManager:
             print(f"[{poc_dt_id}] Signature verification successful")
         else:
             print(f"[{poc_dt_id}] Signature verification failed")
+        
+        end_time = time.perf_counter()
+        total_time =  end_time - self.start_time
+        with open(f"{poc_dt_id}_timings_e_and_a.csv", "a", newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow([total_time])
 
     def start_receiver_thread(self):
         recv_thread = threading.Thread(

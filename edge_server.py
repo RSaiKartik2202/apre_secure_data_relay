@@ -2,6 +2,7 @@ import os
 import socket
 import json
 import time
+import csv
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
@@ -81,6 +82,7 @@ class EdgeServer:
                     self.handle_connection(conn, addr)
 
     def handle_connection(self, conn, addr):
+        self.start_time = time.perf_counter()
         print("[EDGE_SERVER] Connection from", addr)
         buffer = ""
 
@@ -165,8 +167,12 @@ class EdgeServer:
             s.connect((dest_ip, DATA_FORWARD_PORT))
             # print(f"[EDGE_SERVER] Connected to {dst_id} at {dest_ip}:{DATA_FORWARD_PORT}. Forwarding re-encrypted data...")
             s.sendall((json.dumps(payload) + "\n").encode())
-
+        self.end_time = time.perf_counter()
+        total_time = self.end_time - self.start_time
         print(f"[EDGE_SERVER] Forwarded re-encrypted data to {dst_id}")
+        with open(f"edge_timings_e_and_a.csv", "a", newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow([total_time])
 
 
 if __name__ == "__main__":
