@@ -117,39 +117,7 @@ class CommunicationManager:
         Communicates with the edge server to relay encrypted data.
         """
         start_time = time.perf_counter()
-        q = self.key_manager.q
-        secrect_key = self.key_manager.private_key
-        scaled_data = [int(Decimal(str(v))) * PRECISION for v in data]
-
-        k_values = []
-        for _ in scaled_data:
-            k_values.append(secrets.randbelow(q - 1) + 1)
-        kr = secrets.randbelow(q - 1) + 1
-
-        Q = [derive_Gi(i) for i in range(1, len(scaled_data) + 1)]
-        P = self.key_manager.P
-        C = vector_commit(scaled_data, secrect_key, Q, P)
-        R = None
-        for ki, Q_i in zip(k_values, Q):
-            if R is None:
-                R = ki * Q_i
-            else:
-                R = R + ki * Q_i
-        R = R + kr * P
-        
-        e = hash_to_scalar(b"".join(
-            Q_i.x.to_bytes(32, "big") + Q_i.y.to_bytes(32, "big") for Q_i in Q
-        ) + R.x.to_bytes(32, "big") + R.y.to_bytes(32, "big") + C.x.to_bytes(32, "big") + C.y.to_bytes(32, "big") + P.x.to_bytes(32, "big") + P.y.to_bytes(32, "big"))
-
-        v = []
-        for ki, value in zip(k_values, scaled_data):
-            s = schnorr_signature_component(ki, e, value, q)
-            v.append(s)
-        
-        u = schnorr_signature_component(kr, e, secrect_key, q)
-        
-        cm = CryptoManager(self.key_manager)
-        c_t, c_m, hM = cm.encrypt_data(data)
+        M = encode_reals(data)
 
         request_id = str(uuid.uuid4())
 
@@ -158,25 +126,7 @@ class CommunicationManager:
             "src_dt_id": poc_dt_id,
             "dest_dt_id": dest_dt_id,
             "curve": "secp256k1",
-            "u": u,
-            "R": {
-                "x": R.x,
-                "y": R.y
-            },
-            "C": {
-                "x": C.x,
-                "y": C.y
-            },
-            "v": v,
-            "c_t": {
-                "x": c_t.x,
-                "y": c_t.y
-            },
-            "c_m": {
-                "x": c_m.x,
-                "y": c_m.y
-            },
-            "hM": hM.hex(),
+            "M": {"x": M.x, "y": M.y},
             "Torg": time.time()
         }
         end_time = time.perf_counter()
@@ -238,64 +188,15 @@ class CommunicationManager:
             return
 
         CURVE = curve.secp256k1
-        R = Point(
-            data["R"]["x"],
-            data["R"]["y"],
-            CURVE
-        )
-        C = Point(
-            data["C"]["x"],
-            data["C"]["y"],
-            CURVE
-        )
-        u = data["u"]
-        v = data["v"]
-        CT_prime = Point(
-            data["c_t_prime"]["x"],
-            data["c_t_prime"]["y"],
-            CURVE
-        )
-        CM = Point(
-            data["c_m"]["x"],
-            data["c_m"]["y"],
-            CURVE
-        )
-
-        sk_dst_inv = pow(self.key_manager.private_key, -1, CURVE.q)
-        M = CM - (sk_dst_inv * CT_prime)
-
-        hM_computed = hashlib.sha256(
-            M.x.to_bytes(32, "big") + M.y.to_bytes(32, "big")
-        ).hexdigest()
-
-        if hM_computed == data["hM"]:
-            print(f"[{poc_dt_id}] Message integrity verified successfully")
-        else:
-            print(f"[{poc_dt_id}] Integrity check failed")
         
+        M = Point(
+            data["M"]["x"],
+            data["M"]["y"],
+            CURVE
+        )
         # right now count has to be hardcoded, can be sent as part of payload in future
         m = decode_reals(M, 4)
         print(f"[{poc_dt_id}] Decrypted data: {m}")
-
-        Q = [derive_Gi(i) for i in range(1, len(m) + 1)]
-
-        e = hash_to_scalar(b"".join(
-            Q_i.x.to_bytes(32, "big") + Q_i.y.to_bytes(32, "big") for Q_i in Q
-        ) + R.x.to_bytes(32, "big") + R.y.to_bytes(32, "big") + C.x.to_bytes(32, "big") + C.y.to_bytes(32, "big") + self.key_manager.P.x.to_bytes(32, "big") + self.key_manager.P.y.to_bytes(32, "big"))
-
-        left_side = None
-        for i, vi in enumerate(v, start=1):
-            Qi = Q[i-1]
-            term = vi * Qi
-            left_side = term if left_side is None else left_side + term
-        
-        left_side = left_side + u * self.key_manager.P
-
-        right_side = R + (e % CURVE.q) * C
-        if left_side == right_side:
-            print(f"[{poc_dt_id}] Signature verification successful")
-        else:
-            print(f"[{poc_dt_id}] Signature verification failed")
             
 
     def start_receiver_thread(self):
