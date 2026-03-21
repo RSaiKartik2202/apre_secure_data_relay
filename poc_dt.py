@@ -263,7 +263,7 @@ class CommunicationManager:
             print("="*40)
 
             # Save to JSON
-            filename = f"stats_{poc_dt_id}.json"
+            filename = f"no_crypto_stats_{poc_dt_id}.json"
             try:
                 with open(filename, "w") as f:
                     json.dump(output_data, f, indent=4)
@@ -292,7 +292,7 @@ if __name__ == "__main__":
             params = [round(random.randint(-5000, 5000) / 100, 4) for _ in range(4)]
             print(f"[{poc_dt_id}] Sending data: {params} to {dest}")
             comms.send_data_to_edge(params, dest)
-            time.sleep(3)
+            time.sleep(1)
     except KeyboardInterrupt:
         print(f"\n[{poc_dt_id}] Interrupted by user. Processing stats...")
     finally:

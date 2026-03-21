@@ -177,9 +177,9 @@ class EdgeServer:
                 "summary": {"avg_ms": avg, "std_ms": std, "count": len(raw_ms)},
                 "raw_data_ms": raw_ms
             }
-            with open("stats_edge.json", "w") as f:
+            with open("no_crypto_stats_edge.json", "w") as f:
                 json.dump(output, f, indent=4)
-            print("[EDGE_SERVER] Results saved to stats_edge.json")
+            print("[EDGE_SERVER] Results saved to no_crypto_stats_edge.json")
         
 
 
