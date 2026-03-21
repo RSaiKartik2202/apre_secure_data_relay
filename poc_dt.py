@@ -8,6 +8,7 @@ import threading
 import random
 import csv
 import uuid
+import statistics
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
@@ -107,12 +108,15 @@ class CryptoManager:
 class CommunicationManager:
     def __init__(self, key_manager: KeyManager):
         self.key_manager = key_manager
+        self.comp_times = []
+        self.recv_comp_times = []
+        self.stats_lock = threading.Lock()
 
     def send_data_to_edge(self, data: bytes, dest_dt_id):
         """
         Communicates with the edge server to relay encrypted data.
         """
-        # start_comp = time.perf_counter()
+        start_time = time.perf_counter()
         q = self.key_manager.q
         secrect_key = self.key_manager.private_key
         scaled_data = [int(Decimal(str(v))) * PRECISION for v in data]
@@ -175,6 +179,8 @@ class CommunicationManager:
             "hM": hM.hex(),
             "Torg": time.time()
         }
+        end_time = time.perf_counter()
+        self.comp_times.append(end_time - start_time)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.connect((EDGE_IP, EDGE_PORT))
@@ -183,12 +189,6 @@ class CommunicationManager:
             return
         s.sendall((json.dumps(payload) + "\n").encode())
         s.close()
-
-        # end_comp = time.perf_counter()
-        # total_time =  end_comp - start_comp
-        # with open(f"{poc_dt_id}_timings_e_and_a.csv", "a", newline="") as csvfile:
-        #     writer = csv.writer(csvfile)
-        #     writer.writerow([total_time])
         return
     
     def start(self):
@@ -208,7 +208,6 @@ class CommunicationManager:
 
     def handle_connection(self, conn, addr):
         try:
-            # self.start_time = time.perf_counter()
             print(f"[{poc_dt_id}] Connection from", addr)
             buffer = ""
 
@@ -219,7 +218,8 @@ class CommunicationManager:
                 buffer += chunk
                 if "\n" in buffer:
                     break
-
+            
+            recv_start_time = time.perf_counter()
             if buffer.strip():
                 payload = json.loads(buffer.strip())
                 self.decrypt_and_verify(payload)
@@ -227,6 +227,9 @@ class CommunicationManager:
             print(f"[{poc_dt_id}] Error handling connection: {e}")
         finally:
             conn.close()
+            recv_end_time = time.perf_counter()
+            with self.stats_lock:
+                self.recv_comp_times.append(recv_end_time - recv_start_time)
 
     def decrypt_and_verify(self, data):
         Tproxy = data["Tproxy"]
@@ -293,12 +296,7 @@ class CommunicationManager:
             print(f"[{poc_dt_id}] Signature verification successful")
         else:
             print(f"[{poc_dt_id}] Signature verification failed")
-        
-        # end_time = time.perf_counter()
-        # total_time =  end_time - self.start_time
-        # with open(f"{poc_dt_id}_timings_e_and_a.csv", "a", newline="") as csvfile:
-        #     writer = csv.writer(csvfile)
-        #     writer.writerow([total_time])
+            
 
     def start_receiver_thread(self):
         recv_thread = threading.Thread(
@@ -306,6 +304,71 @@ class CommunicationManager:
             daemon=True
         )
         recv_thread.start()
+
+    
+    def save_and_print_stats(self):
+        """
+        Processes both Sending and Receiving stats, prints them, and saves to JSON.
+        """
+        with self.stats_lock:
+            # Prepare data structure for JSON
+            output_data = {
+                "dt_id": poc_dt_id,
+                "timestamp": time.ctime(),
+                "sender_stats": {},
+                "receiver_stats": {}
+            }
+
+            print(f"\n" + "="*40)
+            print(f" FINAL BENCHMARKS FOR: {poc_dt_id} ")
+            print(f"="*40)
+
+            # Process Sender Data
+            if self.comp_times:
+                sender_ms = [t * 1000 for t in self.comp_times]
+                avg_s = sum(sender_ms) / len(sender_ms)
+                std_s = statistics.stdev(sender_ms) if len(sender_ms) > 1 else 0
+                
+                print(f"--- SENDER ROLE ---")
+                print(f"Requests Sent: {len(sender_ms)}")
+                print(f"Average:       {avg_s:.4f} ms")
+                print(f"Std Dev:       {std_s:.4f} ms")
+                
+                output_data["sender_stats"] = {
+                    "count": len(sender_ms),
+                    "average_ms": avg_s,
+                    "std_dev_ms": std_s,
+                    "raw_ms": sender_ms
+                }
+
+            # Process Receiver Data
+            if self.recv_comp_times:
+                recv_ms = [t * 1000 for t in self.recv_comp_times]
+                avg_r = sum(recv_ms) / len(recv_ms)
+                std_r = statistics.stdev(recv_ms) if len(recv_ms) > 1 else 0
+                
+                print(f"\n--- RECEIVER ROLE ---")
+                print(f"Requests Recv: {len(recv_ms)}")
+                print(f"Average:       {avg_r:.4f} ms")
+                print(f"Std Dev:       {std_r:.4f} ms")
+                
+                output_data["receiver_stats"] = {
+                    "count": len(recv_ms),
+                    "average_ms": avg_r,
+                    "std_dev_ms": std_r,
+                    "raw_ms": recv_ms
+                }
+
+            print("="*40)
+
+            # Save to JSON
+            filename = f"stats_{poc_dt_id}.json"
+            try:
+                with open(filename, "w") as f:
+                    json.dump(output_data, f, indent=4)
+                print(f"Results saved to {filename}")
+            except Exception as e:
+                print(f"Failed to save JSON: {e}")
 
     
 
@@ -321,14 +384,18 @@ if __name__ == "__main__":
     comms = CommunicationManager(km)
     comms.start_receiver_thread()
 
-    ITER_CNT = int(input("Number of iterations: "))
-    dest = input("Destination DT ID: ")
-    for _ in range(ITER_CNT):
-        params = [round(random.randint(-5000, 5000) / 100, 4) for _ in range(4)]
-        print(f"[{poc_dt_id}] Sending data: {params} to {dest}")
-        comms.send_data_to_edge(params, dest)
-        time.sleep(3)
-
+    try:
+        ITER_CNT = int(input("Number of iterations: "))
+        dest = input("Destination DT ID: ")
+        for _ in range(ITER_CNT):
+            params = [round(random.randint(-5000, 5000) / 100, 4) for _ in range(4)]
+            print(f"[{poc_dt_id}] Sending data: {params} to {dest}")
+            comms.send_data_to_edge(params, dest)
+            time.sleep(3)
+    except KeyboardInterrupt:
+        print(f"\n[{poc_dt_id}] Interrupted by user. Processing stats...")
+    finally:
+        comms.save_and_print_stats()
     # while True:
     #     dest = input("Destination DT ID: ")
     #     params = [4.5678, -9.1011, 12.1314, 5.123]

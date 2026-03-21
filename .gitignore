@@ -4,3 +4,5 @@ __pycache__
 /traffic_capture
 *.pcapng
 analyze_traffic.py
+*.png
+*.json

@@ -4,6 +4,7 @@ import json
 import time
 import csv
 import threading
+import statistics
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
@@ -70,21 +71,26 @@ class KeyManager:
 class EdgeServer:
     def __init__(self, reenc_keys):
         self.reenc_keys = reenc_keys
+        self.comp_times = []
+        self.stats_lock = threading.Lock()
 
     def start(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             server.bind(("0.0.0.0", DATA_RECEIVE_PORT))
             server.listen(5)
-            print("[EDGE_SERVER] Listening for encrypted data...")
+            server.settimeout(1.0)
+            print("[EDGE_SERVER] Listening... Press Ctrl+C to stop.")
 
             while True:
-                conn, addr = server.accept()
-                thread = threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True)
-                thread.start()
+                try:
+                    conn, addr = server.accept()
+                    thread = threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True)
+                    thread.start()
+                except socket.timeout:
+                    continue
 
     def handle_connection(self, conn, addr):
         try:
-            # self.start_time = time.perf_counter()
             print("[EDGE_SERVER] Connection from", addr)
             buffer = ""
 
@@ -96,6 +102,7 @@ class EdgeServer:
                 if "\n" in buffer:
                     break
 
+            start_time = time.perf_counter()
             if buffer.strip():
                 payload = json.loads(buffer.strip())
                 # print("[EDGE_SERVER] Received payload:", payload)
@@ -103,6 +110,9 @@ class EdgeServer:
         except Exception as e:
             print("[EDGE_SERVER] Error processing connection from", addr, ":", e)
         finally:
+            end_time = time.perf_counter()
+            with self.stats_lock:
+                self.comp_times.append(end_time - start_time)
             conn.close()
 
     def process_payload(self, data):
@@ -175,12 +185,39 @@ class EdgeServer:
             s.connect((dest_ip, DATA_FORWARD_PORT))
             # print(f"[EDGE_SERVER] Connected to {dst_id} at {dest_ip}:{DATA_FORWARD_PORT}. Forwarding re-encrypted data...")
             s.sendall((json.dumps(payload) + "\n").encode())
-        # self.end_time = time.perf_counter()
-        # total_time = self.end_time - self.start_time
         print(f"[EDGE_SERVER] Forwarded re-encrypted data to {dst_id}")
-        # with open(f"edge_timings_e_and_a.csv", "a", newline="") as csvfile:
-        #     writer = csv.writer(csvfile)
-        #     writer.writerow([total_time])
+
+    def save_and_print_stats(self):
+        with self.stats_lock:
+            if not self.comp_times:
+                print("\n[EDGE_SERVER] No data collected.")
+                return
+
+            # Convert to ms
+            raw_ms = [t * 1000 for t in self.comp_times]
+            avg = statistics.mean(raw_ms)
+            std = statistics.stdev(raw_ms) if len(raw_ms) > 1 else 0
+
+            print(f"\n" + "="*40)
+            print(f" EDGE SERVER FINAL BENCHMARKS ")
+            print(f"="*40)
+            print(f"Total Requests: {len(raw_ms)}")
+            print(f"Average:        {avg:.4f} ms")
+            print(f"Std Dev:        {std:.4f} ms")
+            print(f"Max Latency:    {max(raw_ms):.2f} ms")
+            print(f"="*40)
+
+            # Export to JSON
+            output = {
+                "role": "Edge Server",
+                "timestamp": time.ctime(),
+                "summary": {"avg_ms": avg, "std_ms": std, "count": len(raw_ms)},
+                "raw_data_ms": raw_ms
+            }
+            with open("stats_edge.json", "w") as f:
+                json.dump(output, f, indent=4)
+            print("[EDGE_SERVER] Results saved to stats_edge.json")
+        
 
 
 if __name__ == "__main__":
@@ -189,4 +226,9 @@ if __name__ == "__main__":
     reenc_keys = km.reenc_keys
     print(f"[EDGE_SERVER] Re-encryption Keys: {reenc_keys}")
     edge = EdgeServer(km.reenc_keys)
-    edge.start()
+    try:
+        edge.start()
+    except KeyboardInterrupt:
+        print("\n[EDGE_SERVER] Shutting down...")
+    finally:
+        edge.save_and_print_stats()
