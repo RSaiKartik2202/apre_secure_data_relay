@@ -290,7 +290,7 @@ class CommunicationManager:
             print("="*40)
 
             # Save to JSON
-            filename = f"stats_{poc_dt_id}.json"
+            filename = f"enc_only_stats_{poc_dt_id}.json"
             try:
                 with open(filename, "w") as f:
                     json.dump(output_data, f, indent=4)
