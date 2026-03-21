@@ -148,9 +148,10 @@ class CommunicationManager:
         
         u = schnorr_signature_component(kr, e, secrect_key, q)
         
-        cm = CryptoManager(self.key_manager)
-        c_t, c_m, hM = cm.encrypt_data(data)
-
+        M = encode_reals(data)
+        hM = hashlib.sha256(
+            M.x.to_bytes(32, "big") + M.y.to_bytes(32, "big")
+        ).digest()
         request_id = str(uuid.uuid4())
 
         payload = {
@@ -168,13 +169,9 @@ class CommunicationManager:
                 "y": C.y
             },
             "v": v,
-            "c_t": {
-                "x": c_t.x,
-                "y": c_t.y
-            },
-            "c_m": {
-                "x": c_m.x,
-                "y": c_m.y
+            "M": {
+                "x": M.x,
+                "y": M.y
             },
             "hM": hM.hex(),
             "Torg": time.time()
@@ -250,19 +247,12 @@ class CommunicationManager:
         )
         u = data["u"]
         v = data["v"]
-        CT_prime = Point(
-            data["c_t_prime"]["x"],
-            data["c_t_prime"]["y"],
-            CURVE
-        )
-        CM = Point(
-            data["c_m"]["x"],
-            data["c_m"]["y"],
-            CURVE
-        )
 
-        sk_dst_inv = pow(self.key_manager.private_key, -1, CURVE.q)
-        M = CM - (sk_dst_inv * CT_prime)
+        M = Point(
+            data["M"]["x"],
+            data["M"]["y"],
+            CURVE
+        )
 
         hM_computed = hashlib.sha256(
             M.x.to_bytes(32, "big") + M.y.to_bytes(32, "big")

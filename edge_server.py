@@ -121,29 +121,6 @@ class EdgeServer:
             print("[EDGE_SERVER] Dropping message: stale timestamp")
             return
 
-        CT = Point(
-            data["c_t"]["x"],
-            data["c_t"]["y"],
-            curve.secp256k1
-        )
-        CM = Point(
-            data["c_m"]["x"],
-            data["c_m"]["y"],
-            curve.secp256k1
-        )
-
-        # Re-encryption: C_T' = rk * C_T
-        src_id = data["src_dt_id"]
-        dst_id = data["dest_dt_id"]
-
-        key = (src_id, dst_id)
-        if key not in self.reenc_keys:
-            print("[EDGE_SERVER] No re-encryption key for", key)
-            return
-
-        rk = self.reenc_keys[key]
-        CT_prime = rk * CT
-
         dst_id = data["dest_dt_id"]
         if dst_id not in DESTINATION_REGISTRY:
             print("[EDGE_SERVER] Unknown destination:", dst_id)
@@ -152,26 +129,17 @@ class EdgeServer:
 
         self.forward_to_destination(
             dst_id,
-            CT_prime,
-            CM,
             data,
             time.time()
         )
 
-    def forward_to_destination(self, dst_id, CT_prime, CM, data, Tproxy):
+    def forward_to_destination(self, dst_id, data, Tproxy):
         dest_ip = DESTINATION_REGISTRY[dst_id]
 
         payload = {
             "request_id": data["request_id"],
             "curve": "secp256k1",
-            "c_t_prime": {
-                "x": CT_prime.x,
-                "y": CT_prime.y
-            },
-            "c_m": {
-                "x": CM.x,
-                "y": CM.y
-            },
+            "M": data["M"],
             "hM": data["hM"],
             "Tproxy": Tproxy,
             "R": data["R"],
