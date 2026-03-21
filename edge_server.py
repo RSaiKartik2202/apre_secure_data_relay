@@ -173,11 +173,7 @@ class EdgeServer:
                 "y": CM.y
             },
             "hM": data["hM"],
-            "Tproxy": Tproxy,
-            "R": data["R"],
-            "u": data["u"],
-            "v": data["v"],
-            "C": data["C"]
+            "Tproxy": Tproxy
         }
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
