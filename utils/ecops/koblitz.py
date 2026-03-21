@@ -9,30 +9,32 @@ b = curve.b
 
 KOBLITZ_K = 1000
 PRECISION = 10**6
-CHUNK_BITS = 64
+CHUNK_BITS = 48
 CHUNK_MASK = (1 << CHUNK_BITS) - 1
 
 
 def _encode_integer_list(int_list):
     m = 0
     for val in int_list:
-        if val >= (1 << (CHUNK_BITS - 1)) or val < -(1 << (CHUNK_BITS - 1)):
-            raise ValueError("Integer out of range for chunk size")
+        limit = 1 << (CHUNK_BITS - 1)
+        if val >= limit or val < -limit:
+            raise ValueError(f"Value {val} out of range for {CHUNK_BITS} bits")
 
         val &= CHUNK_MASK
         m = (m << CHUNK_BITS) | val
 
-    if m * KOBLITZ_K >= p:
-        raise ValueError("Packed value too large for curve field")
+    if (m * KOBLITZ_K + (KOBLITZ_K - 1)) >= p:
+        raise ValueError(f"Packed value {m} too large for field. Total bits: {m.bit_length()}")
 
     return m
 
 
 def _decode_integer_list(m, count):
     vals = []
+    SIGN_BIT_MASK = 1 << (CHUNK_BITS - 1)
     for _ in range(count):
         val = m & CHUNK_MASK
-        if val >= (1 << (CHUNK_BITS - 1)):
+        if val & SIGN_BIT_MASK:
             val -= (1 << CHUNK_BITS)
         vals.append(val)
         m >>= CHUNK_BITS

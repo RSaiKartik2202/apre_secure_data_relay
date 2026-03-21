@@ -3,6 +3,7 @@ import socket
 import json
 import time
 import csv
+import threading
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
@@ -78,25 +79,31 @@ class EdgeServer:
 
             while True:
                 conn, addr = server.accept()
-                with conn:
-                    self.handle_connection(conn, addr)
+                thread = threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True)
+                thread.start()
 
     def handle_connection(self, conn, addr):
-        self.start_time = time.perf_counter()
-        print("[EDGE_SERVER] Connection from", addr)
-        buffer = ""
+        try:
+            # self.start_time = time.perf_counter()
+            print("[EDGE_SERVER] Connection from", addr)
+            buffer = ""
 
-        while True:
-            chunk = conn.recv(4096).decode("utf-8")
-            if not chunk:
-                break
-            buffer += chunk
-            if "\n" in buffer:
-                break
+            while True:
+                chunk = conn.recv(4096).decode("utf-8")
+                if not chunk:
+                    break
+                buffer += chunk
+                if "\n" in buffer:
+                    break
 
-        payload = json.loads(buffer.strip())
-        # print("[EDGE_SERVER] Received payload:", payload)
-        self.process_payload(payload)
+            if buffer.strip():
+                payload = json.loads(buffer.strip())
+                # print("[EDGE_SERVER] Received payload:", payload)
+                self.process_payload(payload)
+        except Exception as e:
+            print("[EDGE_SERVER] Error processing connection from", addr, ":", e)
+        finally:
+            conn.close()
 
     def process_payload(self, data):
         Torg = data["Torg"]
@@ -145,6 +152,7 @@ class EdgeServer:
         dest_ip = DESTINATION_REGISTRY[dst_id]
 
         payload = {
+            "request_id": data["request_id"],
             "curve": "secp256k1",
             "c_t_prime": {
                 "x": CT_prime.x,
@@ -167,12 +175,12 @@ class EdgeServer:
             s.connect((dest_ip, DATA_FORWARD_PORT))
             # print(f"[EDGE_SERVER] Connected to {dst_id} at {dest_ip}:{DATA_FORWARD_PORT}. Forwarding re-encrypted data...")
             s.sendall((json.dumps(payload) + "\n").encode())
-        self.end_time = time.perf_counter()
-        total_time = self.end_time - self.start_time
+        # self.end_time = time.perf_counter()
+        # total_time = self.end_time - self.start_time
         print(f"[EDGE_SERVER] Forwarded re-encrypted data to {dst_id}")
-        with open(f"edge_timings_e_and_a.csv", "a", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([total_time])
+        # with open(f"edge_timings_e_and_a.csv", "a", newline="") as csvfile:
+        #     writer = csv.writer(csvfile)
+        #     writer.writerow([total_time])
 
 
 if __name__ == "__main__":

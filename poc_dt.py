@@ -7,6 +7,7 @@ import time
 import threading
 import random
 import csv
+import uuid
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
@@ -111,7 +112,7 @@ class CommunicationManager:
         """
         Communicates with the edge server to relay encrypted data.
         """
-        start_comp = time.perf_counter()
+        # start_comp = time.perf_counter()
         q = self.key_manager.q
         secrect_key = self.key_manager.private_key
         scaled_data = [int(Decimal(str(v))) * PRECISION for v in data]
@@ -146,7 +147,10 @@ class CommunicationManager:
         cm = CryptoManager(self.key_manager)
         c_t, c_m, hM = cm.encrypt_data(data)
 
+        request_id = str(uuid.uuid4())
+
         payload = {
+            "request_id": request_id,
             "src_dt_id": poc_dt_id,
             "dest_dt_id": dest_dt_id,
             "curve": "secp256k1",
@@ -180,11 +184,11 @@ class CommunicationManager:
         s.sendall((json.dumps(payload) + "\n").encode())
         s.close()
 
-        end_comp = time.perf_counter()
-        total_time =  end_comp - start_comp
-        with open(f"{poc_dt_id}_timings_e_and_a.csv", "a", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([total_time])
+        # end_comp = time.perf_counter()
+        # total_time =  end_comp - start_comp
+        # with open(f"{poc_dt_id}_timings_e_and_a.csv", "a", newline="") as csvfile:
+        #     writer = csv.writer(csvfile)
+        #     writer.writerow([total_time])
         return
     
     def start(self):
@@ -199,24 +203,30 @@ class CommunicationManager:
                     print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
                     conn.close()
                     continue"""
-                with conn:
-                    self.handle_connection(conn, addr)
+                thread = threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True)
+                thread.start()
 
     def handle_connection(self, conn, addr):
-        self.start_time = time.perf_counter()
-        print(f"[{poc_dt_id}] Connection from", addr)
-        buffer = ""
+        try:
+            # self.start_time = time.perf_counter()
+            print(f"[{poc_dt_id}] Connection from", addr)
+            buffer = ""
 
-        while True:
-            chunk = conn.recv(4096).decode("utf-8")
-            if not chunk:
-                break
-            buffer += chunk
-            if "\n" in buffer:
-                break
+            while True:
+                chunk = conn.recv(4096).decode("utf-8")
+                if not chunk:
+                    break
+                buffer += chunk
+                if "\n" in buffer:
+                    break
 
-        payload = json.loads(buffer.strip())
-        self.decrypt_and_verify(payload)
+            if buffer.strip():
+                payload = json.loads(buffer.strip())
+                self.decrypt_and_verify(payload)
+        except Exception as e:
+            print(f"[{poc_dt_id}] Error handling connection: {e}")
+        finally:
+            conn.close()
 
     def decrypt_and_verify(self, data):
         Tproxy = data["Tproxy"]
@@ -284,11 +294,11 @@ class CommunicationManager:
         else:
             print(f"[{poc_dt_id}] Signature verification failed")
         
-        end_time = time.perf_counter()
-        total_time =  end_time - self.start_time
-        with open(f"{poc_dt_id}_timings_e_and_a.csv", "a", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([total_time])
+        # end_time = time.perf_counter()
+        # total_time =  end_time - self.start_time
+        # with open(f"{poc_dt_id}_timings_e_and_a.csv", "a", newline="") as csvfile:
+        #     writer = csv.writer(csvfile)
+        #     writer.writerow([total_time])
 
     def start_receiver_thread(self):
         recv_thread = threading.Thread(
@@ -311,12 +321,13 @@ if __name__ == "__main__":
     comms = CommunicationManager(km)
     comms.start_receiver_thread()
 
-    ITER_CNT = 5
+    ITER_CNT = int(input("Number of iterations: "))
     dest = input("Destination DT ID: ")
     for _ in range(ITER_CNT):
-        params = [round(random.randint(0, 10000) / 100, 4) for _ in range(4)]
+        params = [round(random.randint(-5000, 5000) / 100, 4) for _ in range(4)]
+        print(f"[{poc_dt_id}] Sending data: {params} to {dest}")
         comms.send_data_to_edge(params, dest)
-        time.sleep(5)
+        time.sleep(3)
 
     # while True:
     #     dest = input("Destination DT ID: ")

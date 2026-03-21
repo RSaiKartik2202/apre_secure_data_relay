@@ -2,3 +2,5 @@
 __pycache__
 .env
 /traffic_capture
+*.pcapng
+analyze_traffic.py
