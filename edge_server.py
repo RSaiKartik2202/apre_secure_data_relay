@@ -133,7 +133,7 @@ class EdgeServer:
             time.time()
         )
 
-    def forward_to_destination(self, dst_id, CT_prime, CM, data, Tproxy):
+    def forward_to_destination(self, dst_id, data, Tproxy):
         dest_ip = DESTINATION_REGISTRY[dst_id]
 
         payload = {
