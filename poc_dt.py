@@ -381,12 +381,8 @@ if __name__ == "__main__":
             params = [round(random.randint(-5000, 5000) / 100, 4) for _ in range(4)]
             print(f"[{poc_dt_id}] Sending data: {params} to {dest}")
             comms.send_data_to_edge(params, dest)
-            time.sleep(1)
+            time.sleep(3)
     except KeyboardInterrupt:
         print(f"\n[{poc_dt_id}] Interrupted by user. Processing stats...")
     finally:
         comms.save_and_print_stats()
-    # while True:
-    #     dest = input("Destination DT ID: ")
-    #     params = [4.5678, -9.1011, 12.1314, 5.123]
-    #     comms.send_data_to_edge(params, dest)

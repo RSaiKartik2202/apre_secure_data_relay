@@ -6,3 +6,5 @@ __pycache__
 analyze_traffic.py
 *.png
 *.json
+computation_time_analysis.py
+network_latency_analysis.py
