@@ -297,7 +297,3 @@ if __name__ == "__main__":
         print(f"\n[{poc_dt_id}] Interrupted by user. Processing stats...")
     finally:
         comms.save_and_print_stats()
-    # while True:
-    #     dest = input("Destination DT ID: ")
-    #     params = [4.5678, -9.1011, 12.1314, 5.123]
-    #     comms.send_data_to_edge(params, dest)
