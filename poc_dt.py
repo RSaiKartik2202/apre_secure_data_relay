@@ -130,7 +130,7 @@ class CryptoManager:
         c_t = r * pk_org
         c_m = r * P + M
 
-        coord_size = (curve.p.bit_length() + 7) // 8
+        coord_size = (self.key_manager.curve.q.bit_length() + 7) // 8
 
         hM = hashlib.sha384(
             b"M|" +
@@ -172,7 +172,7 @@ class CommunicationManager:
                 R = R + ki * Q_i
         R = R + kr * P
 
-        coord_size = (self.key_manager.curve.p.bit_length() + 7) // 8
+        coord_size = (self.key_manager.curve.q.bit_length() + 7) // 8
 
         e = hash_to_scalar(
             b"".join(
@@ -245,12 +245,15 @@ class CommunicationManager:
             print(f"[{poc_dt_id}] Listening for re-encrypted data...")
 
             while True:
+                print("hiaay")
                 conn, addr = server.accept()
-                if addr[0] != EDGE_IP:
-                    print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
-                    conn.close()
-                    continue
-                thread = threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True)
+                # if addr[0] != EDGE_IP:
+                #     print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                #     conn.close()
+                #     continue
+                print("hiay")
+                thread = threading.Thread(target=self.handle_connection, args=(conn, addr))
+                print("huoyaah")
                 thread.start()
 
     def handle_connection(self, conn, addr):
@@ -269,6 +272,7 @@ class CommunicationManager:
             recv_start_time = time.perf_counter()
             if buffer.strip():
                 payload = json.loads(buffer.strip())
+                print(payload)
                 self.decrypt_and_verify(payload)
         except Exception as e:
             print(f"[{poc_dt_id}] Error handling connection: {e}")
@@ -311,7 +315,7 @@ class CommunicationManager:
         sk_dst_inv = pow(self.key_manager.private_key, -1, CURVE.q)
         M = CM - (sk_dst_inv * CT_prime)
 
-        coord_size = (curve.p.bit_length() + 7) // 8
+        coord_size = (CURVE.q.bit_length() + 7) // 8
 
         hM_computed = hashlib.sha384(
             b"M|" +
@@ -442,7 +446,7 @@ if __name__ == "__main__":
         ITER_CNT = int(input("Number of iterations: "))
         dest = input("Destination DT ID: ")
         for _ in range(ITER_CNT):
-            params = [round(random.randint(-5000, 5000) / 100, 7) for _ in range(4)]
+            params = [round(random.randint(-5000, 5000) / 100, 4) for _ in range(7)]
             print(f"[{poc_dt_id}] Sending data: {params} to {dest}")
             comms.send_data_to_edge(params, dest)
             time.sleep(1)
