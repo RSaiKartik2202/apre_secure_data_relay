@@ -103,7 +103,7 @@ class EdgeServer:
             start_time = time.perf_counter()
             if buffer.strip():
                 payload = json.loads(buffer.strip())
-                # print("[EDGE_SERVER] Received payload:", payload)
+                print("[EDGE_SERVER] Received payload:", payload)
                 self.process_payload(payload)
         except Exception as e:
             print("[EDGE_SERVER] Error processing connection from", addr, ":", e)
@@ -160,7 +160,6 @@ class EdgeServer:
         dest_ip = DESTINATION_REGISTRY[dst_id]
 
         payload = {
-            "request_id": data["request_id"],
             "curve": "P384",
             "c_t_prime": {
                 "x": CT_prime.x,

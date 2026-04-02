@@ -7,7 +7,6 @@ import time
 import threading
 import random
 import csv
-import uuid
 import statistics
 from dotenv import load_dotenv
 from fastecdsa import curve
@@ -198,10 +197,8 @@ class CommunicationManager:
         cm = CryptoManager(self.key_manager)
         c_t, c_m, hM = cm.encrypt_data(data)
 
-        request_id = str(uuid.uuid4())
 
         payload = {
-            "request_id": request_id,
             "src_dt_id": poc_dt_id,
             "dest_dt_id": dest_dt_id,
             "curve": "P384",
@@ -245,15 +242,12 @@ class CommunicationManager:
             print(f"[{poc_dt_id}] Listening for re-encrypted data...")
 
             while True:
-                print("hiaay")
                 conn, addr = server.accept()
                 # if addr[0] != EDGE_IP:
                 #     print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
                 #     conn.close()
                 #     continue
-                print("hiay")
                 thread = threading.Thread(target=self.handle_connection, args=(conn, addr))
-                print("huoyaah")
                 thread.start()
 
     def handle_connection(self, conn, addr):
@@ -323,7 +317,7 @@ class CommunicationManager:
             M.y.to_bytes(coord_size, "big")
         ).digest()
 
-        if hM_computed == data["hM"]:
+        if hM_computed == bytes.fromhex(data["hM"]):
             print(f"[{poc_dt_id}] Message integrity verified successfully")
         else:
             print(f"[{poc_dt_id}] Integrity check failed")

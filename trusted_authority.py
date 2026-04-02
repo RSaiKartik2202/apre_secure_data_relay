@@ -69,12 +69,12 @@ class TA:
                         request = json.loads(data.strip())
                         print(f"[TA] Received request: {request}")
                         # DT_REGISTRY[request.get("dt_id")] = addr[0]
-                        DT_REGISTRY[request.get("dt_id")] = request.get("dt_ip")
+                        DT_REGISTRY[request.get("dt_id")] = request.get("ip")
                         DT_IDS.append(request.get("dt_id"))
                         sk, pk = self.generate_key_pair()
                         self.dt_keys[request.get("dt_id")] = (sk, pk)
                         key_json = {
-                            "curve": "secp256k1",
+                            "curve": "P384",
                             "dt_id": request.get("dt_id"),
                             "sk_org": sk,
                             "pk_org": {
