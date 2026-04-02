@@ -130,8 +130,12 @@ class CryptoManager:
         c_t = r * pk_org
         c_m = r * P + M
 
-        hM = hashlib.sha256(
-            M.x.to_bytes(32, "big") + M.y.to_bytes(32, "big")
+        coord_size = (curve.p.bit_length() + 7) // 8
+
+        hM = hashlib.sha384(
+            b"M|" +
+            M.x.to_bytes(coord_size, "big") +
+            M.y.to_bytes(coord_size, "big")
         ).digest()
 
         return c_t, c_m, hM
@@ -307,9 +311,13 @@ class CommunicationManager:
         sk_dst_inv = pow(self.key_manager.private_key, -1, CURVE.q)
         M = CM - (sk_dst_inv * CT_prime)
 
-        hM_computed = hashlib.sha256(
-            M.x.to_bytes(32, "big") + M.y.to_bytes(32, "big")
-        ).hexdigest()
+        coord_size = (curve.p.bit_length() + 7) // 8
+
+        hM_computed = hashlib.sha384(
+            b"M|" +
+            M.x.to_bytes(coord_size, "big") +
+            M.y.to_bytes(coord_size, "big")
+        ).digest()
 
         if hM_computed == data["hM"]:
             print(f"[{poc_dt_id}] Message integrity verified successfully")
@@ -322,9 +330,12 @@ class CommunicationManager:
 
         Q = [derive_Gi(i) for i in range(1, len(m) + 1)]
 
-        e = hash_to_scalar(b"".join(
-            Q_i.x.to_bytes(32, "big") + Q_i.y.to_bytes(32, "big") for Q_i in Q
-        ) + R.x.to_bytes(32, "big") + R.y.to_bytes(32, "big") + C.x.to_bytes(32, "big") + C.y.to_bytes(32, "big") + self.key_manager.P.x.to_bytes(32, "big") + self.key_manager.P.y.to_bytes(32, "big"))
+        e = hash_to_scalar(
+            b"".join(
+                Q_i.x.to_bytes(coord_size, "big") + Q_i.y.to_bytes(coord_size, "big") for Q_i in Q
+            ) + R.x.to_bytes(coord_size, "big") + R.y.to_bytes(coord_size, "big") + C.x.to_bytes(coord_size, "big") + C.y.to_bytes(coord_size, "big") + self.key_manager.P.x.to_bytes(coord_size, "big") + self.key_manager.P.y.to_bytes(coord_size, "big")
+        )
+
 
         left_side = None
         for i, vi in enumerate(v, start=1):
