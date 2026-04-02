@@ -8,13 +8,11 @@ import statistics
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
+from utils.db.edge_db_setup import KeyStore
 
 load_dotenv()
 
-DESTINATION_REGISTRY = {
-    "DT_1": (os.getenv("DT_1_IP")),
-    "DT_2": (os.getenv("DT_2_IP")),
-}
+DESTINATION_REGISTRY = {}
 DATA_RECEIVE_PORT = int(os.getenv("EDGE_PORT", 8082))
 DATA_FORWARD_PORT = int(os.getenv("DATA_PORT", 8081))
 KEYS_RECEIVE_PORT = int(os.getenv("KEYS_PORT", 8080))
@@ -22,57 +20,57 @@ TA_IP = os.getenv("TA_IP")
 
 class KeyManager:
     def __init__(self):
-        self.reenc_keys = {}
+        self.ks = KeyStore()
+        self.lock = threading.Lock()
     
+    def handle_client(self, conn, addr):
+        with conn:
+            print("[EDGE_SERVER] Connected by", addr)
+            buffer = ""
+            while True:
+                chunk = conn.recv(4096).decode("utf-8")
+                if not chunk:
+                    break
+                buffer += chunk
+                if "\n" in buffer:
+                    break
+            reenc_key_data = json.loads(buffer.strip())
+            with self.lock:
+                DESTINATION_REGISTRY[reenc_key_data["dt_id"]] = reenc_key_data["dt_ip"]
+                self.ks.store_keys(reenc_key_data)
+
 
     def recv_reencrypted_key(self):
         """
         Receives the re-encrypted key from trusted authority.
         """
+        sources = self.ks.get_all_sources()
+        if sources:
+            print("[EDGE_SERVER] Existing sources in DB:")
+            for from_id, from_ip in sources:
+                print(f"  - {from_id} at {from_ip}")
+                DESTINATION_REGISTRY[from_id] = from_ip
+        
+        
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             server.bind(("0.0.0.0", KEYS_RECEIVE_PORT))
-            server.listen(1)
+            server.listen(5)
             print("[EDGE_SERVER] Waiting for re-encryption keys from Trusted Authority...")
-            conn, addr = server.accept()
-            # if addr[0] != TA_IP:
-            #     print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
-            #     conn.close()
-            #     return
-            with conn:
-                print("[EDGE_SERVER] Connected by", addr)
-                buffer = ""
-                while True:
-                    chunk = conn.recv(4096).decode("utf-8")
-                    if not chunk:
-                        break
-                    buffer += chunk
-                    if "\n" in buffer:
-                        break
-                reenc_key_data = json.loads(buffer.strip())
-                for item in reenc_key_data["reenc_keys"]:
-                    key = (item["from"], item["to"])
-                    self.reenc_keys[key] = int(item["rk"])
-
-                set_key(".env", "REENC_KEYS", json.dumps(reenc_key_data["reenc_keys"]))
-                print("[EDGE_SERVER] Re-encryption keys loaded and stored in .env")
-
-    def get_reenc_keys(self):
-        """
-        Retrieves the stored re-encrypted keys from the .env file or receives it from the trusted authority.
-        """
-        renc_key_str = os.getenv("REENC_KEYS")
-        if renc_key_str:
-            for item in json.loads(renc_key_str):
-                self.reenc_keys[(item["from"], item["to"])] = int(item["rk"])
-        else:
-            self.recv_reencrypted_key()
+            while True:
+                conn, addr = server.accept()
+                if addr[0] != TA_IP:
+                    print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                    conn.close()
+                    continue
+                threading.Thread(target=self.handle_client, args=(conn, addr), daemon = True).start()
+                
 
 
 class EdgeServer:
-    def __init__(self, reenc_keys):
-        self.reenc_keys = reenc_keys
+    def __init__(self):
         self.comp_times = []
         self.stats_lock = threading.Lock()
+        self.ks = KeyStore()
 
     def start(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
@@ -136,12 +134,12 @@ class EdgeServer:
         src_id = data["src_dt_id"]
         dst_id = data["dest_dt_id"]
 
-        key = (src_id, dst_id)
-        if key not in self.reenc_keys:
-            print("[EDGE_SERVER] No re-encryption key for", key)
+        renc_key_str = self.ks.get_key(src_id, dst_id)
+        if renc_key_str is None:
+            print(f"[EDGE_SERVER] No re-encryption key for {src_id} -> {dst_id}. Cannot process request.")
             return
 
-        rk = self.reenc_keys[key]
+        rk = int(renc_key_str)
         CT_prime = rk * CT
 
         dst_id = data["dest_dt_id"]
@@ -222,13 +220,12 @@ class EdgeServer:
 
 if __name__ == "__main__":
     km = KeyManager()
-    km.get_reenc_keys()
-    reenc_keys = km.reenc_keys
-    print(f"[EDGE_SERVER] Re-encryption Keys: {reenc_keys}")
-    edge = EdgeServer(km.reenc_keys)
+    edge = EdgeServer()
+    threading.Thread(target=km.recv_reencrypted_key, daemon=True).start()
     try:
         edge.start()
     except KeyboardInterrupt:
         print("\n[EDGE_SERVER] Shutting down...")
     finally:
         edge.save_and_print_stats()
+        time.sleep(1)

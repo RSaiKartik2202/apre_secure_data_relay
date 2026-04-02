@@ -9,12 +9,13 @@ import random
 import csv
 import uuid
 import statistics
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 from fastecdsa import curve
 from fastecdsa.point import Point
-from utils.ecops.koblitz import encode_reals, decode_reals
+from utils.encoding.koblitz import encode_reals, decode_reals
 from utils.schnorr.signature import schnorr_signature_component
 from utils.pedersen.committment import vector_commit, derive_Gi, hash_to_scalar
+from utils.db.poc_dt_setup import init_db, store_keypair, get_keypair
 from decimal import Decimal
 
 load_dotenv()
@@ -35,50 +36,80 @@ class KeyManager:
         self.curve = curve.secp256k1
         self.q = self.curve.q          # Curve order
         self.P = self.curve.G          # Generator point
+        init_db()
 
 
     def recv_key_pair(self):
         """
         Receives the public-private key pair from trusted authority.
         """
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-            server.bind(("0.0.0.0", KEYS_PORT))
-            server.listen(1)
-            print(f"[{poc_dt_id}] Waiting for key pair from Trusted Authority...")
-            conn, addr = server.accept()
-            """if addr[0] != TA_IP:
-                print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
-                conn.close()
-                return"""""
-            with conn:
-                print(f"[{poc_dt_id}] Connected by", addr)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((TA_IP, KEYS_PORT))
+                request_info = {
+                    "dt_id": poc_dt_id,
+                    "ip": os.getenv(f"{poc_dt_id}_IP", "unknown"),
+                }
+                s.sendall((json.dumps(request_info) + "\n").encode())
+                print(f"[{poc_dt_id}] Sent key request to TA with info: {request_info}")
+
                 buffer = ""
                 while True:
-                    chunk = conn.recv(4096).decode("utf-8")
+                    chunk = s.recv(4096).decode("utf-8")
                     if not chunk:
                         break
                     buffer += chunk
                     if "\n" in buffer:
                         break
-                key_pair = json.loads(buffer.strip())
-                set_key(".env", f"{poc_dt_id}_sk", str(key_pair["sk_org"]))
-                set_key(".env", f"{poc_dt_id}_pk_x", str(key_pair["pk_org"]["x"]))
-                set_key(".env", f"{poc_dt_id}_pk_y", str(key_pair["pk_org"]["y"]))
-                self.private_key = key_pair["sk_org"]
-                self.public_key = Point(key_pair["pk_org"]["x"], key_pair["pk_org"]["y"], curve.secp256k1)
-                print(f"[{poc_dt_id}] Key pair received and stored in .env")
+
+                if buffer.strip():
+                    key_pair = json.loads(buffer.strip())
+                    store_keypair(poc_dt_id, key_pair)
+                    self.private_key = key_pair["sk_org"]
+                    self.public_key = Point(key_pair["pk_org"]["x"], key_pair["pk_org"]["y"], curve.secp256k1)
+                    print(f"[{poc_dt_id}] Key pair received and stored in database")
+        except Exception as e:
+            print(f"[{poc_dt_id}] Failed to receive key pair from TA: {e}")
+
+
+        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        #     server.bind(("0.0.0.0", KEYS_PORT))
+        #     server.listen(1)
+        #     print(f"[{poc_dt_id}] Waiting for key pair from Trusted Authority...")
+        #     conn, addr = server.accept()
+        #     """if addr[0] != TA_IP:
+        #         print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
+        #         conn.close()
+        #         return"""""
+        #     with conn:
+        #         print(f"[{poc_dt_id}] Connected by", addr)
+                # buffer = ""
+                # while True:
+                #     chunk = conn.recv(4096).decode("utf-8")
+                #     if not chunk:
+                #         break
+                #     buffer += chunk
+                #     if "\n" in buffer:
+                #         break
+        #         key_pair = json.loads(buffer.strip())
+        #         set_key(".env", f"{poc_dt_id}_sk", str(key_pair["sk_org"]))
+        #         set_key(".env", f"{poc_dt_id}_pk_x", str(key_pair["pk_org"]["x"]))
+        #         set_key(".env", f"{poc_dt_id}_pk_y", str(key_pair["pk_org"]["y"]))
+        #         self.private_key = key_pair["sk_org"]
+        #         self.public_key = Point(key_pair["pk_org"]["x"], key_pair["pk_org"]["y"], curve.secp256k1)
+        #         print(f"[{poc_dt_id}] Key pair received and stored in .env")
     
     def get_keys(self):
         """
         Retrieves the stored keys from the .env file or receives them from the trusted authority.
         """
-        priv_key_str = os.getenv(f"{poc_dt_id}_sk")
-        if not priv_key_str:
-            self.recv_key_pair()
-            return
-        self.private_key = int(priv_key_str)
-        pk_x = int(os.getenv(f"{poc_dt_id}_pk_x"))
-        pk_y = int(os.getenv(f"{poc_dt_id}_pk_y"))
+        key_pair = get_keypair(poc_dt_id)
+        if key_pair is None:
+                self.recv_key_pair()
+                return
+        self.private_key = int(key_pair["sk"])
+        pk_x = int(key_pair["pk"]["x"])
+        pk_y = int(key_pair["pk"]["y"])
         self.public_key = Point(pk_x, pk_y, curve.secp256k1)
 
 
@@ -199,10 +230,10 @@ class CommunicationManager:
 
             while True:
                 conn, addr = server.accept()
-                """if addr[0] != EDGE_IP:
+                if addr[0] != EDGE_IP:
                     print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
                     conn.close()
-                    continue"""
+                    continue
                 thread = threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True)
                 thread.start()
 
@@ -391,12 +422,8 @@ if __name__ == "__main__":
             params = [round(random.randint(-5000, 5000) / 100, 4) for _ in range(4)]
             print(f"[{poc_dt_id}] Sending data: {params} to {dest}")
             comms.send_data_to_edge(params, dest)
-            time.sleep(3)
+            time.sleep(1)
     except KeyboardInterrupt:
         print(f"\n[{poc_dt_id}] Interrupted by user. Processing stats...")
     finally:
         comms.save_and_print_stats()
-    # while True:
-    #     dest = input("Destination DT ID: ")
-    #     params = [4.5678, -9.1011, 12.1314, 5.123]
-    #     comms.send_data_to_edge(params, dest)
