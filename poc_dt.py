@@ -167,10 +167,22 @@ class CommunicationManager:
             else:
                 R = R + ki * Q_i
         R = R + kr * P
-        
-        e = hash_to_scalar(b"".join(
-            Q_i.x.to_bytes(32, "big") + Q_i.y.to_bytes(32, "big") for Q_i in Q
-        ) + R.x.to_bytes(32, "big") + R.y.to_bytes(32, "big") + C.x.to_bytes(32, "big") + C.y.to_bytes(32, "big") + P.x.to_bytes(32, "big") + P.y.to_bytes(32, "big"))
+
+        coord_size = (self.key_manager.curve.p.bit_length() + 7) // 8
+
+        e = hash_to_scalar(
+            b"".join(
+                Q_i.x.to_bytes(coord_size, "big") +
+                Q_i.y.to_bytes(coord_size, "big")
+                for Q_i in Q
+            )
+            + R.x.to_bytes(coord_size, "big")
+            + R.y.to_bytes(coord_size, "big")
+            + C.x.to_bytes(coord_size, "big")
+            + C.y.to_bytes(coord_size, "big")
+            + P.x.to_bytes(coord_size, "big")
+            + P.y.to_bytes(coord_size, "big")
+        )
 
         v = []
         for ki, value in zip(k_values, scaled_data):

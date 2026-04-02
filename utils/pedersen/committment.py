@@ -7,12 +7,14 @@ G = curve.G                  # base generator
 n = curve.q                  # curve order
 
 def hash_to_scalar(data: bytes):
-    h = hashlib.sha256(data).digest()
+    h = hashlib.sha384(data).digest()
     return int.from_bytes(h, "big") % n
 
 def derive_Gi(i: int) -> Point:
-    s = hash_to_scalar(f"G{i}".encode())
-    return s * G
+    while True:
+        s = hash_to_scalar(b"Gi|" + i.to_bytes(4, "big"))
+        if s != 0:
+            return s * G
 
 def vector_commit(values, r, Q, H):
     C = None

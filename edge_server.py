@@ -58,10 +58,10 @@ class KeyManager:
             print("[EDGE_SERVER] Waiting for re-encryption keys from Trusted Authority...")
             while True:
                 conn, addr = server.accept()
-                if addr[0] != TA_IP:
-                    print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
-                    conn.close()
-                    continue
+                # if addr[0] != TA_IP:
+                #     print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                #     conn.close()
+                #     continue
                 threading.Thread(target=self.handle_client, args=(conn, addr), daemon = True).start()
                 
 
