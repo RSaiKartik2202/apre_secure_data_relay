@@ -3,16 +3,16 @@ import socket
 import json
 import time
 import csv
+import threading
+import statistics
 from dotenv import load_dotenv, set_key
 from fastecdsa import curve
 from fastecdsa.point import Point
+from utils.db.edge_db_setup import KeyStore
 
 load_dotenv()
 
-DESTINATION_REGISTRY = {
-    "DT_1": (os.getenv("DT_1_IP")),
-    "DT_2": (os.getenv("DT_2_IP")),
-}
+DESTINATION_REGISTRY = {}
 DATA_RECEIVE_PORT = int(os.getenv("EDGE_PORT", 8082))
 DATA_FORWARD_PORT = int(os.getenv("DATA_PORT", 8081))
 KEYS_RECEIVE_PORT = int(os.getenv("KEYS_PORT", 8080))
@@ -20,83 +20,98 @@ TA_IP = os.getenv("TA_IP")
 
 class KeyManager:
     def __init__(self):
-        self.reenc_keys = {}
+        self.ks = KeyStore()
+        self.lock = threading.Lock()
     
+    def handle_client(self, conn, addr):
+        with conn:
+            print("[EDGE_SERVER] Connected by", addr)
+            buffer = ""
+            while True:
+                chunk = conn.recv(4096).decode("utf-8")
+                if not chunk:
+                    break
+                buffer += chunk
+                if "\n" in buffer:
+                    break
+            reenc_key_data = json.loads(buffer.strip())
+            with self.lock:
+                DESTINATION_REGISTRY[reenc_key_data["dt_id"]] = reenc_key_data["dt_ip"]
+                self.ks.store_keys(reenc_key_data)
+
 
     def recv_reencrypted_key(self):
         """
         Receives the re-encrypted key from trusted authority.
         """
+        sources = self.ks.get_all_sources()
+        if sources:
+            print("[EDGE_SERVER] Existing sources in DB:")
+            for from_id, from_ip in sources:
+                print(f"  - {from_id} at {from_ip}")
+                DESTINATION_REGISTRY[from_id] = from_ip
+        
+        
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             server.bind(("0.0.0.0", KEYS_RECEIVE_PORT))
-            server.listen(1)
+            server.listen(5)
             print("[EDGE_SERVER] Waiting for re-encryption keys from Trusted Authority...")
-            conn, addr = server.accept()
-            # if addr[0] != TA_IP:
-            #     print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
-            #     conn.close()
-            #     return
-            with conn:
-                print("[EDGE_SERVER] Connected by", addr)
-                buffer = ""
-                while True:
-                    chunk = conn.recv(4096).decode("utf-8")
-                    if not chunk:
-                        break
-                    buffer += chunk
-                    if "\n" in buffer:
-                        break
-                reenc_key_data = json.loads(buffer.strip())
-                for item in reenc_key_data["reenc_keys"]:
-                    key = (item["from"], item["to"])
-                    self.reenc_keys[key] = int(item["rk"])
-
-                set_key(".env", "REENC_KEYS", json.dumps(reenc_key_data["reenc_keys"]))
-                print("[EDGE_SERVER] Re-encryption keys loaded and stored in .env")
-
-    def get_reenc_keys(self):
-        """
-        Retrieves the stored re-encrypted keys from the .env file or receives it from the trusted authority.
-        """
-        renc_key_str = os.getenv("REENC_KEYS")
-        if renc_key_str:
-            for item in json.loads(renc_key_str):
-                self.reenc_keys[(item["from"], item["to"])] = int(item["rk"])
-        else:
-            self.recv_reencrypted_key()
+            while True:
+                conn, addr = server.accept()
+                if addr[0] != TA_IP:
+                    print(f"[EDGE_SERVER] Connection from unauthorized IP {addr[0]}. Closing connection.")
+                    conn.close()
+                    continue
+                threading.Thread(target=self.handle_client, args=(conn, addr), daemon = True).start()
+                
 
 
 class EdgeServer:
-    def __init__(self, reenc_keys):
-        self.reenc_keys = reenc_keys
+    def __init__(self):
+        self.comp_times = []
+        self.stats_lock = threading.Lock()
+        self.ks = KeyStore()
 
     def start(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             server.bind(("0.0.0.0", DATA_RECEIVE_PORT))
             server.listen(5)
-            print("[EDGE_SERVER] Listening for encrypted data...")
+            server.settimeout(1.0)
+            print("[EDGE_SERVER] Listening... Press Ctrl+C to stop.")
 
             while True:
-                conn, addr = server.accept()
-                with conn:
-                    self.handle_connection(conn, addr)
+                try:
+                    conn, addr = server.accept()
+                    thread = threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True)
+                    thread.start()
+                except socket.timeout:
+                    continue
 
     def handle_connection(self, conn, addr):
-        self.start_time = time.perf_counter()
-        print("[EDGE_SERVER] Connection from", addr)
-        buffer = ""
+        try:
+            print("[EDGE_SERVER] Connection from", addr)
+            buffer = ""
 
-        while True:
-            chunk = conn.recv(4096).decode("utf-8")
-            if not chunk:
-                break
-            buffer += chunk
-            if "\n" in buffer:
-                break
+            while True:
+                chunk = conn.recv(4096).decode("utf-8")
+                if not chunk:
+                    break
+                buffer += chunk
+                if "\n" in buffer:
+                    break
 
-        payload = json.loads(buffer.strip())
-        # print("[EDGE_SERVER] Received payload:", payload)
-        self.process_payload(payload)
+            start_time = time.perf_counter()
+            if buffer.strip():
+                payload = json.loads(buffer.strip())
+                # print("[EDGE_SERVER] Received payload:", payload)
+                self.process_payload(payload)
+        except Exception as e:
+            print("[EDGE_SERVER] Error processing connection from", addr, ":", e)
+        finally:
+            end_time = time.perf_counter()
+            with self.stats_lock:
+                self.comp_times.append(end_time - start_time)
+            conn.close()
 
     def process_payload(self, data):
         Torg = data["Torg"]
@@ -119,12 +134,12 @@ class EdgeServer:
         src_id = data["src_dt_id"]
         dst_id = data["dest_dt_id"]
 
-        key = (src_id, dst_id)
-        if key not in self.reenc_keys:
-            print("[EDGE_SERVER] No re-encryption key for", key)
+        renc_key_str = self.ks.get_key(src_id, dst_id)
+        if renc_key_str is None:
+            print(f"[EDGE_SERVER] No re-encryption key for {src_id} -> {dst_id}. Cannot process request.")
             return
 
-        rk = self.reenc_keys[key]
+        rk = int(renc_key_str)
         CT_prime = rk * CT
 
         dst_id = data["dest_dt_id"]
@@ -145,6 +160,7 @@ class EdgeServer:
         dest_ip = DESTINATION_REGISTRY[dst_id]
 
         payload = {
+            "request_id": data["request_id"],
             "curve": "secp256k1",
             "c_t_prime": {
                 "x": CT_prime.x,
@@ -167,18 +183,49 @@ class EdgeServer:
             s.connect((dest_ip, DATA_FORWARD_PORT))
             # print(f"[EDGE_SERVER] Connected to {dst_id} at {dest_ip}:{DATA_FORWARD_PORT}. Forwarding re-encrypted data...")
             s.sendall((json.dumps(payload) + "\n").encode())
-        self.end_time = time.perf_counter()
-        total_time = self.end_time - self.start_time
         print(f"[EDGE_SERVER] Forwarded re-encrypted data to {dst_id}")
-        with open(f"edge_timings_e_and_a.csv", "a", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([total_time])
+
+    def save_and_print_stats(self):
+        with self.stats_lock:
+            if not self.comp_times:
+                print("\n[EDGE_SERVER] No data collected.")
+                return
+
+            # Convert to ms
+            raw_ms = [t * 1000 for t in self.comp_times]
+            avg = statistics.mean(raw_ms)
+            std = statistics.stdev(raw_ms) if len(raw_ms) > 1 else 0
+
+            print(f"\n" + "="*40)
+            print(f" EDGE SERVER FINAL BENCHMARKS ")
+            print(f"="*40)
+            print(f"Total Requests: {len(raw_ms)}")
+            print(f"Average:        {avg:.4f} ms")
+            print(f"Std Dev:        {std:.4f} ms")
+            print(f"Max Latency:    {max(raw_ms):.2f} ms")
+            print(f"="*40)
+
+            # Export to JSON
+            output = {
+                "role": "Edge Server",
+                "timestamp": time.ctime(),
+                "summary": {"avg_ms": avg, "std_ms": std, "count": len(raw_ms)},
+                "raw_data_ms": raw_ms
+            }
+            with open("stats_edge.json", "w") as f:
+                json.dump(output, f, indent=4)
+            print("[EDGE_SERVER] Results saved to stats_edge.json")
+        
 
 
 if __name__ == "__main__":
     km = KeyManager()
-    km.get_reenc_keys()
-    reenc_keys = km.reenc_keys
-    print(f"[EDGE_SERVER] Re-encryption Keys: {reenc_keys}")
-    edge = EdgeServer(km.reenc_keys)
-    edge.start()
+    edge = EdgeServer()
+    threading.Thread(target=km.recv_reencrypted_key, daemon=True).start()
+    try:
+        edge.start()
+    except KeyboardInterrupt:
+        print("\n[EDGE_SERVER] Shutting down...")
+    finally:
+        edge.save_and_print_stats()
+        time.sleep(1)
