@@ -1,4 +1,4 @@
-from fastecdsa.curve import secp256k1
+from fastecdsa.curve import P384
 from dotenv import load_dotenv
 import secrets
 import socket
@@ -10,12 +10,13 @@ load_dotenv()
 DT_IDS = []
 DT_REGISTRY = {}
 KEYS_PORT = int(os.getenv("KEYS_PORT", 8080))
+EDGE_KEYS_PORT = int(os.getenv("EDGE_KEYS_PORT", 8083))
 EDGE_IP = os.getenv("EDGE_IP")
 
 
 class TA:
     def __init__(self):
-        self.curve = secp256k1
+        self.curve = P384
         self.P = self.curve.G          # Generator point
         self.q = self.curve.q          # Curve order
         self.dt_keys = {}
@@ -104,8 +105,8 @@ class TA:
         """
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((edge_ip, KEYS_PORT))
-            print(f"[TA] Connected to {edge_ip}:{KEYS_PORT}. Sending keys...")
+            s.connect((edge_ip, EDGE_KEYS_PORT))
+            print(f"[TA] Connected to {edge_ip}:{EDGE_KEYS_PORT}. Sending keys...")
             reenc_payload = {"reenc_keys": [], "dt_id": dt_id, "dt_ip": DT_REGISTRY[dt_id]}
             # iterate through the DT registry and generate re-encryption keys for the edge server
             for dst_id in DT_IDS:
@@ -133,9 +134,9 @@ class TA:
 
 
             s.sendall((json.dumps(reenc_payload) + "\n").encode("utf-8"))
-            print(f"[TA] Keys sent to {EDGE_IP}:{KEYS_PORT}")
+            print(f"[TA] Keys sent to {EDGE_IP}:{EDGE_KEYS_PORT}")
         except ConnectionRefusedError:
-            print(f"[TA] Could not connect to {EDGE_IP}:{KEYS_PORT}")
+            print(f"[TA] Could not connect to {EDGE_IP}:{EDGE_KEYS_PORT}")
         finally:
             s.close()
 

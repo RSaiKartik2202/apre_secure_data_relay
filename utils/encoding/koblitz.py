@@ -1,8 +1,8 @@
-from fastecdsa.curve import secp256k1
+from fastecdsa.curve import P384
 from fastecdsa.point import Point
 from fastecdsa.util import mod_sqrt
 
-curve = secp256k1
+curve = P384
 p = curve.p
 a = curve.a
 b = curve.b

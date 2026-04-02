@@ -33,7 +33,7 @@ class KeyManager:
     def __init__(self):
         self.private_key = None
         self.public_key = None
-        self.curve = curve.secp256k1
+        self.curve = curve.P384
         self.q = self.curve.q          # Curve order
         self.P = self.curve.G          # Generator point
         init_db()
@@ -66,7 +66,7 @@ class KeyManager:
                     key_pair = json.loads(buffer.strip())
                     store_keypair(poc_dt_id, key_pair)
                     self.private_key = key_pair["sk_org"]
-                    self.public_key = Point(key_pair["pk_org"]["x"], key_pair["pk_org"]["y"], curve.secp256k1)
+                    self.public_key = Point(key_pair["pk_org"]["x"], key_pair["pk_org"]["y"], curve.P384)
                     print(f"[{poc_dt_id}] Key pair received and stored in database")
         except Exception as e:
             print(f"[{poc_dt_id}] Failed to receive key pair from TA: {e}")
@@ -110,7 +110,7 @@ class KeyManager:
         self.private_key = int(key_pair["sk"])
         pk_x = int(key_pair["pk"]["x"])
         pk_y = int(key_pair["pk"]["y"])
-        self.public_key = Point(pk_x, pk_y, curve.secp256k1)
+        self.public_key = Point(pk_x, pk_y, curve.P384)
 
 
 class CryptoManager:
@@ -188,7 +188,7 @@ class CommunicationManager:
             "request_id": request_id,
             "src_dt_id": poc_dt_id,
             "dest_dt_id": dest_dt_id,
-            "curve": "secp256k1",
+            "curve": "P384",
             "u": u,
             "R": {
                 "x": R.x,
@@ -268,7 +268,7 @@ class CommunicationManager:
             print(f"[{poc_dt_id}] Dropping message: stale timestamp")
             return
 
-        CURVE = curve.secp256k1
+        CURVE = curve.P384
         R = Point(
             data["R"]["x"],
             data["R"]["y"],
@@ -305,7 +305,7 @@ class CommunicationManager:
             print(f"[{poc_dt_id}] Integrity check failed")
         
         # right now count has to be hardcoded, can be sent as part of payload in future
-        m = decode_reals(M, 4)
+        m = decode_reals(M, 7)
         print(f"[{poc_dt_id}] Decrypted data: {m}")
 
         Q = [derive_Gi(i) for i in range(1, len(m) + 1)]
@@ -419,7 +419,7 @@ if __name__ == "__main__":
         ITER_CNT = int(input("Number of iterations: "))
         dest = input("Destination DT ID: ")
         for _ in range(ITER_CNT):
-            params = [round(random.randint(-5000, 5000) / 100, 4) for _ in range(4)]
+            params = [round(random.randint(-5000, 5000) / 100, 7) for _ in range(4)]
             print(f"[{poc_dt_id}] Sending data: {params} to {dest}")
             comms.send_data_to_edge(params, dest)
             time.sleep(1)

@@ -15,7 +15,7 @@ load_dotenv()
 DESTINATION_REGISTRY = {}
 DATA_RECEIVE_PORT = int(os.getenv("EDGE_PORT", 8082))
 DATA_FORWARD_PORT = int(os.getenv("DATA_PORT", 8081))
-KEYS_RECEIVE_PORT = int(os.getenv("KEYS_PORT", 8080))
+KEYS_RECEIVE_PORT = int(os.getenv("EDGE_KEYS_PORT", 8083))
 TA_IP = os.getenv("TA_IP")
 
 class KeyManager:
@@ -122,12 +122,12 @@ class EdgeServer:
         CT = Point(
             data["c_t"]["x"],
             data["c_t"]["y"],
-            curve.secp256k1
+            curve.P384
         )
         CM = Point(
             data["c_m"]["x"],
             data["c_m"]["y"],
-            curve.secp256k1
+            curve.P384
         )
 
         # Re-encryption: C_T' = rk * C_T
@@ -161,7 +161,7 @@ class EdgeServer:
 
         payload = {
             "request_id": data["request_id"],
-            "curve": "secp256k1",
+            "curve": "P384",
             "c_t_prime": {
                 "x": CT_prime.x,
                 "y": CT_prime.y

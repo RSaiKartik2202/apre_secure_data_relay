@@ -2,7 +2,7 @@ from fastecdsa import curve
 from fastecdsa.point import Point
 import hashlib
 
-curve = curve.secp256k1
+curve = curve.P384
 G = curve.G                  # base generator
 n = curve.q                  # curve order
 
