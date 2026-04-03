@@ -6,7 +6,6 @@ import hashlib
 import time
 import threading
 import random
-import csv
 import statistics
 from dotenv import load_dotenv
 from fastecdsa import curve
@@ -45,6 +44,7 @@ class KeyManager:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((TA_IP, KEYS_PORT))
+                print(f"[{poc_dt_id}] Connected to TA at {TA_IP}:{KEYS_PORT}. Requesting key pair...")
                 request_info = {
                     "dt_id": poc_dt_id,
                     "ip": os.getenv(f"{poc_dt_id}_IP", "unknown"),
@@ -71,32 +71,6 @@ class KeyManager:
             print(f"[{poc_dt_id}] Failed to receive key pair from TA: {e}")
 
 
-        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        #     server.bind(("0.0.0.0", KEYS_PORT))
-        #     server.listen(1)
-        #     print(f"[{poc_dt_id}] Waiting for key pair from Trusted Authority...")
-        #     conn, addr = server.accept()
-        #     """if addr[0] != TA_IP:
-        #         print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
-        #         conn.close()
-        #         return"""""
-        #     with conn:
-        #         print(f"[{poc_dt_id}] Connected by", addr)
-                # buffer = ""
-                # while True:
-                #     chunk = conn.recv(4096).decode("utf-8")
-                #     if not chunk:
-                #         break
-                #     buffer += chunk
-                #     if "\n" in buffer:
-                #         break
-        #         key_pair = json.loads(buffer.strip())
-        #         set_key(".env", f"{poc_dt_id}_sk", str(key_pair["sk_org"]))
-        #         set_key(".env", f"{poc_dt_id}_pk_x", str(key_pair["pk_org"]["x"]))
-        #         set_key(".env", f"{poc_dt_id}_pk_y", str(key_pair["pk_org"]["y"]))
-        #         self.private_key = key_pair["sk_org"]
-        #         self.public_key = Point(key_pair["pk_org"]["x"], key_pair["pk_org"]["y"], curve.secp256k1)
-        #         print(f"[{poc_dt_id}] Key pair received and stored in .env")
     
     def get_keys(self):
         """
@@ -110,6 +84,7 @@ class KeyManager:
         pk_x = int(key_pair["pk"]["x"])
         pk_y = int(key_pair["pk"]["y"])
         self.public_key = Point(pk_x, pk_y, curve.P384)
+        print(f"[{poc_dt_id}] Key pair loaded from database")
 
 
 class CryptoManager:
@@ -126,8 +101,11 @@ class CryptoManager:
 
         r = secrets.randbelow(q - 1) + 1
         M = encode_reals(data)
+        print(f"[{poc_dt_id}] Encoded data point M: ({M.x}, {M.y})")
         c_t = r * pk_org
         c_m = r * P + M
+        print(f"[{poc_dt_id}] Encrypted data point c_m: ({c_m.x}, {c_m.y})")
+        print(f"[{poc_dt_id}] Encrypted data point c_t: ({c_t.x}, {c_t.y})")
 
         coord_size = (self.key_manager.curve.q.bit_length() + 7) // 8
 
@@ -136,6 +114,8 @@ class CryptoManager:
             M.x.to_bytes(coord_size, "big") +
             M.y.to_bytes(coord_size, "big")
         ).digest()
+
+        print(f"[{poc_dt_id}] Hashed data point hM: {hM.hex()}")
 
         return c_t, c_m, hM
 
@@ -161,8 +141,10 @@ class CommunicationManager:
         kr = secrets.randbelow(q - 1) + 1
 
         Q = [derive_Gi(i) for i in range(1, len(scaled_data) + 1)]
+        print(f"[{poc_dt_id}] Derived Q_i points: {Q}")
         P = self.key_manager.P
         C = vector_commit(scaled_data, secrect_key, Q, P)
+        print(f"[{poc_dt_id}] Committed vector C: ({C.x}, {C.y})")
         R = None
         for ki, Q_i in zip(k_values, Q):
             if R is None:
@@ -170,6 +152,7 @@ class CommunicationManager:
             else:
                 R = R + ki * Q_i
         R = R + kr * P
+        print(f"[{poc_dt_id}] Commitment randomness R: ({R.x}, {R.y})")
 
         coord_size = (self.key_manager.curve.q.bit_length() + 7) // 8
 
@@ -186,14 +169,17 @@ class CommunicationManager:
             + P.x.to_bytes(coord_size, "big")
             + P.y.to_bytes(coord_size, "big")
         )
+        print(f"[{poc_dt_id}] Computed challenge e: {e}")
 
         v = []
         for ki, value in zip(k_values, scaled_data):
             s = schnorr_signature_component(ki, e, value, q)
             v.append(s)
+        print(f"[{poc_dt_id}] Computed signature components v: {v}")
         
         u = schnorr_signature_component(kr, e, secrect_key, q)
-        
+        print(f"[{poc_dt_id}] Computed signature component u: {u}")
+
         cm = CryptoManager(self.key_manager)
         c_t, c_m, hM = cm.encrypt_data(data)
 
@@ -228,11 +214,12 @@ class CommunicationManager:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.connect((EDGE_IP, EDGE_PORT))
+            s.sendall((json.dumps(payload) + "\n").encode())
+            print(f"[{poc_dt_id}] Sent encrypted data to edge server at {EDGE_IP}:{EDGE_PORT}")
+            s.close()
         except ConnectionRefusedError:
             print(f"[{poc_dt_id}] Edge server not available")
             return
-        s.sendall((json.dumps(payload) + "\n").encode())
-        s.close()
         return
     
     def start(self):
@@ -247,12 +234,12 @@ class CommunicationManager:
                 #     print(f"[{poc_dt_id}] Connection from unauthorized IP {addr[0]}. Closing connection.")
                 #     conn.close()
                 #     continue
+                print(f"[{poc_dt_id}] Connection established with {addr}")
                 thread = threading.Thread(target=self.handle_connection, args=(conn, addr))
                 thread.start()
 
     def handle_connection(self, conn, addr):
         try:
-            print(f"[{poc_dt_id}] Connection from", addr)
             buffer = ""
 
             while True:
@@ -266,7 +253,9 @@ class CommunicationManager:
             recv_start_time = time.perf_counter()
             if buffer.strip():
                 payload = json.loads(buffer.strip())
-                print(payload)
+                # beautify print the payload
+                payload_str = json.dumps(payload, indent=2)
+                print(f"[{poc_dt_id}] Received payload: {payload_str}")
                 self.decrypt_and_verify(payload)
         except Exception as e:
             print(f"[{poc_dt_id}] Error handling connection: {e}")
@@ -281,6 +270,8 @@ class CommunicationManager:
         if abs(time.time() - Tproxy) > 10:
             print(f"[{poc_dt_id}] Dropping message: stale timestamp")
             return
+        else:
+            print(f"[{poc_dt_id}] Timestamp check passed: Tproxy={Tproxy}, current_time={time.time()}")
 
         CURVE = curve.P384
         R = Point(
@@ -308,6 +299,7 @@ class CommunicationManager:
 
         sk_dst_inv = pow(self.key_manager.private_key, -1, CURVE.q)
         M = CM - (sk_dst_inv * CT_prime)
+        print(f"[{poc_dt_id}] Decrypted point M: ({M.x}, {M.y})")
 
         coord_size = (CURVE.q.bit_length() + 7) // 8
 
@@ -345,7 +337,7 @@ class CommunicationManager:
 
         right_side = R + (e % CURVE.q) * C
         if left_side == right_side:
-            print(f"[{poc_dt_id}] Signature verification successful")
+            print(f"[{poc_dt_id}] Signature verification successful, data authenticity confirmed")
         else:
             print(f"[{poc_dt_id}] Signature verification failed")
             
@@ -430,7 +422,6 @@ if __name__ == "__main__":
     sk = km.private_key
     public_key = km.public_key
 
-    print(f"[{poc_dt_id}] Private Key: {sk}")
     print(f"[{poc_dt_id}] Public Key: ({public_key.x}, {public_key.y})")
 
     comms = CommunicationManager(km)

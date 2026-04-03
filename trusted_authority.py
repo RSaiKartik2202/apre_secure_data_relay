@@ -41,11 +41,7 @@ class TA:
     def send_keys(self):
         """
         Sends the generated keys to the specified recipient.
-        """
-        # change this as a server that listens for connections from the client and sends the keys when a connection is established
-        # Initially the client sends a request with its IP address and it's DT ID, then the TA sends the keys to the client
-        # We add entries into the DT registry as well as write it into .env file so that the client can read it when it starts up
-        
+        """        
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             server.bind(('', KEYS_PORT))
             server.listen()
@@ -84,21 +80,12 @@ class TA:
                         }
                         response = json.dumps(key_json) + "\n"
                         conn.sendall(response.encode("utf-8"))
-                        print(f"[TA] Keys sent to {addr[0]}:{KEYS_PORT}")
+                        print(f"[TA] Keys sent to {addr[0]} for {request.get('dt_id')}")
                         self.send_keys_to_edge(request.get("dt_id"), EDGE_IP)
                     except json.JSONDecodeError:
                         print(f"[TA] Failed to decode JSON from {addr}: {data}")
         
-        # try:
-        #     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #     s.connect((recipient_ip, KEYS_PORT))
-        #     print(f"[TA] Connected to {recipient_ip}:{KEYS_PORT}. Sending keys...")
-        #     s.sendall((json.dumps(key_json) + "\n").encode("utf-8"))
-        #     print(f"[TA] Keys sent to {recipient_ip}:{KEYS_PORT}")
-        # except ConnectionRefusedError:
-        #     print(f"[TA] Could not connect to {recipient_ip}:{KEYS_PORT}")
-        # finally:
-        #     s.close()
+
         
     def send_keys_to_edge(self, dt_id, edge_ip):
         """
@@ -107,9 +94,9 @@ class TA:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((edge_ip, EDGE_KEYS_PORT))
-            print(f"[TA] Connected to {edge_ip}:{EDGE_KEYS_PORT}. Sending keys...")
+            print(f"[TA] Connected to {edge_ip}:{EDGE_KEYS_PORT}. Sending re-encryption keys for {dt_id}...")
             reenc_payload = {"reenc_keys": [], "dt_id": dt_id, "dt_ip": DT_REGISTRY[dt_id]}
-            # iterate through the DT registry and generate re-encryption keys for the edge server
+
             for dst_id in DT_IDS:
                 if dst_id == dt_id:
                     continue
@@ -135,7 +122,7 @@ class TA:
 
 
             s.sendall((json.dumps(reenc_payload) + "\n").encode("utf-8"))
-            print(f"[TA] Keys sent to {EDGE_IP}:{EDGE_KEYS_PORT}")
+            print(f"[TA] Re-encryption keys sent to {EDGE_IP}:{EDGE_KEYS_PORT}")
         except ConnectionRefusedError:
             print(f"[TA] Could not connect to {EDGE_IP}:{EDGE_KEYS_PORT}")
         finally:

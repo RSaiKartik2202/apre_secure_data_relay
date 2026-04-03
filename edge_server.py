@@ -2,10 +2,9 @@ import os
 import socket
 import json
 import time
-import csv
 import threading
 import statistics
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 from fastecdsa import curve
 from fastecdsa.point import Point
 from utils.db.edge_db_setup import KeyStore
@@ -35,9 +34,13 @@ class KeyManager:
                 if "\n" in buffer:
                     break
             reenc_key_data = json.loads(buffer.strip())
+            print(f"[EDGE_SERVER] Received re-encrypted keys for {reenc_key_data['dt_id']}:{reenc_key_data['dt_ip']} from TA")
             with self.lock:
                 DESTINATION_REGISTRY[reenc_key_data["dt_id"]] = reenc_key_data["dt_ip"]
                 self.ks.store_keys(reenc_key_data)
+            print(f"[EDGE_SERVER] Updated DESTINATION_REGISTRY: {DESTINATION_REGISTRY}")
+            print(f"[EDGE_SERVER] Stored re-encryption keys for {reenc_key_data['dt_id']} in Database")
+
 
 
     def recv_reencrypted_key(self):
@@ -77,7 +80,7 @@ class EdgeServer:
             server.bind(("0.0.0.0", DATA_RECEIVE_PORT))
             server.listen(5)
             server.settimeout(1.0)
-            print("[EDGE_SERVER] Listening... Press Ctrl+C to stop.")
+            print("[EDGE_SERVER] Listening for incoming data... Press Ctrl+C to stop.")
 
             while True:
                 try:
@@ -103,7 +106,8 @@ class EdgeServer:
             start_time = time.perf_counter()
             if buffer.strip():
                 payload = json.loads(buffer.strip())
-                print("[EDGE_SERVER] Received payload:", payload)
+                payload_str = json.dumps(payload, indent=2)
+                print("[EDGE_SERVER] Received payload:", payload_str)
                 self.process_payload(payload)
         except Exception as e:
             print("[EDGE_SERVER] Error processing connection from", addr, ":", e)
@@ -118,6 +122,8 @@ class EdgeServer:
         if abs(time.time() - Torg) > 10:
             print("[EDGE_SERVER] Dropping message: stale timestamp")
             return
+        else:
+            print(f"[EDGE_SERVER] Timestamp check passed: Torg={Torg}, current_time={time.time()}")
 
         CT = Point(
             data["c_t"]["x"],
@@ -141,6 +147,8 @@ class EdgeServer:
 
         rk = int(renc_key_str)
         CT_prime = rk * CT
+        print(f"[EDGE SERVER] Updated C_t' for {src_id} -> {dst_id} using re-encryption key. C_t': ({CT_prime.x}, {CT_prime.y})")
+        print(f"[EDGE_SERVER] Re-encryption successful for {src_id} -> {dst_id}. Forwarding to destination...")
 
         dst_id = data["dest_dt_id"]
         if dst_id not in DESTINATION_REGISTRY:
