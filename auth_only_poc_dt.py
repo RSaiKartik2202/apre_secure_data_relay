@@ -180,8 +180,15 @@ class CommunicationManager:
         u = schnorr_signature_component(kr, e, secrect_key, q)
         print(f"[{poc_dt_id}] Computed signature component u: {u}")
 
-        cm = CryptoManager(self.key_manager)
-        c_t, c_m, hM = cm.encrypt_data(data)
+        M = encode_reals(data)
+        print(f"[{poc_dt_id}] Encoded data point M: ({M.x}, {M.y})")
+        hM = hashlib.sha384(
+            b"M|" +
+            M.x.to_bytes(coord_size, "big") +
+            M.y.to_bytes(coord_size, "big")
+        ).digest()
+
+        print(f"[{poc_dt_id}] Hashed data point hM: {hM.hex()}")
 
 
         payload = {
@@ -198,13 +205,9 @@ class CommunicationManager:
                 "y": C.y
             },
             "v": v,
-            "c_t": {
-                "x": c_t.x,
-                "y": c_t.y
-            },
-            "c_m": {
-                "x": c_m.x,
-                "y": c_m.y
+            "M": {
+                "x": M.x,
+                "y": M.y
             },
             "hM": hM.hex(),
             "Torg": time.time()
@@ -215,7 +218,7 @@ class CommunicationManager:
         try:
             s.connect((EDGE_IP, EDGE_PORT))
             s.sendall((json.dumps(payload) + "\n").encode())
-            print(f"[{poc_dt_id}] Sent encrypted data to edge server at {EDGE_IP}:{EDGE_PORT}")
+            print(f"[{poc_dt_id}] Sent signed data to edge server at {EDGE_IP}:{EDGE_PORT}")
             s.close()
         except ConnectionRefusedError:
             print(f"[{poc_dt_id}] Edge server not available")
@@ -226,7 +229,7 @@ class CommunicationManager:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             server.bind(("0.0.0.0", DATA_PORT))
             server.listen(5)
-            print(f"[{poc_dt_id}] Listening for re-encrypted data from {EDGE_IP}:{EDGE_PORT}...")
+            print(f"[{poc_dt_id}] Listening for data from {EDGE_IP}:{EDGE_PORT}...")
 
             while True:
                 conn, addr = server.accept()
@@ -286,19 +289,12 @@ class CommunicationManager:
         )
         u = data["u"]
         v = data["v"]
-        CT_prime = Point(
-            data["c_t_prime"]["x"],
-            data["c_t_prime"]["y"],
-            CURVE
-        )
-        CM = Point(
-            data["c_m"]["x"],
-            data["c_m"]["y"],
-            CURVE
-        )
 
-        sk_dst_inv = pow(self.key_manager.private_key, -1, CURVE.q)
-        M = CM - (sk_dst_inv * CT_prime)
+        M = Point(
+            data["M"]["x"],
+            data["M"]["y"],
+            CURVE
+        )
         print(f"[{poc_dt_id}] Decrypted point M: ({M.x}, {M.y})")
 
         coord_size = (CURVE.q.bit_length() + 7) // 8
@@ -406,7 +402,7 @@ class CommunicationManager:
             print("="*40)
 
             # Save to JSON
-            filename = f"stats_{poc_dt_id}.json"
+            filename = f"auth_only_stats_{poc_dt_id}.json"
             try:
                 with open(filename, "w") as f:
                     json.dump(output_data, f, indent=4)

@@ -11,10 +11,7 @@ from dotenv import load_dotenv
 from fastecdsa import curve
 from fastecdsa.point import Point
 from utils.encoding.koblitz import encode_reals, decode_reals
-from utils.schnorr.signature import schnorr_signature_component
-from utils.pedersen.committment import vector_commit, derive_Gi, hash_to_scalar
 from utils.db.poc_dt_setup import init_db, store_keypair, get_keypair
-from decimal import Decimal
 
 load_dotenv()
 
@@ -87,38 +84,6 @@ class KeyManager:
         print(f"[{poc_dt_id}] Key pair loaded from database")
 
 
-class CryptoManager:
-    def __init__(self, key_manager: KeyManager):
-        self.key_manager = key_manager
-
-    def encrypt_data(self, data):
-        """
-        Encrypts the data to be relayed to the destination digital twin.
-        """
-        q = self.key_manager.q
-        P = self.key_manager.P
-        pk_org = self.key_manager.public_key
-
-        r = secrets.randbelow(q - 1) + 1
-        M = encode_reals(data)
-        print(f"[{poc_dt_id}] Encoded data point M: ({M.x}, {M.y})")
-        c_t = r * pk_org
-        c_m = r * P + M
-        print(f"[{poc_dt_id}] Encrypted data point c_m: ({c_m.x}, {c_m.y})")
-        print(f"[{poc_dt_id}] Encrypted data point c_t: ({c_t.x}, {c_t.y})")
-
-        coord_size = (self.key_manager.curve.q.bit_length() + 7) // 8
-
-        hM = hashlib.sha384(
-            b"M|" +
-            M.x.to_bytes(coord_size, "big") +
-            M.y.to_bytes(coord_size, "big")
-        ).digest()
-
-        print(f"[{poc_dt_id}] Hashed data point hM: {hM.hex()}")
-
-        return c_t, c_m, hM
-
 class CommunicationManager:
     def __init__(self, key_manager: KeyManager):
         self.key_manager = key_manager
@@ -131,80 +96,26 @@ class CommunicationManager:
         Communicates with the edge server to relay encrypted data.
         """
         start_time = time.perf_counter()
-        q = self.key_manager.q
-        secrect_key = self.key_manager.private_key
-        scaled_data = [int(Decimal(str(v))) * PRECISION for v in data]
 
-        k_values = []
-        for _ in scaled_data:
-            k_values.append(secrets.randbelow(q - 1) + 1)
-        kr = secrets.randbelow(q - 1) + 1
 
-        Q = [derive_Gi(i) for i in range(1, len(scaled_data) + 1)]
-        print(f"[{poc_dt_id}] Derived Q_i points: {Q}")
-        P = self.key_manager.P
-        C = vector_commit(scaled_data, secrect_key, Q, P)
-        print(f"[{poc_dt_id}] Committed vector C: ({C.x}, {C.y})")
-        R = None
-        for ki, Q_i in zip(k_values, Q):
-            if R is None:
-                R = ki * Q_i
-            else:
-                R = R + ki * Q_i
-        R = R + kr * P
-        print(f"[{poc_dt_id}] Commitment randomness R: ({R.x}, {R.y})")
-
+        M = encode_reals(data)
+        print(f"[{poc_dt_id}] Encoded data point M: ({M.x}, {M.y})")
         coord_size = (self.key_manager.curve.q.bit_length() + 7) // 8
+        hM = hashlib.sha384(
+            b"M|" +
+            M.x.to_bytes(coord_size, "big") +
+            M.y.to_bytes(coord_size, "big")
+        ).digest()
 
-        e = hash_to_scalar(
-            b"".join(
-                Q_i.x.to_bytes(coord_size, "big") +
-                Q_i.y.to_bytes(coord_size, "big")
-                for Q_i in Q
-            )
-            + R.x.to_bytes(coord_size, "big")
-            + R.y.to_bytes(coord_size, "big")
-            + C.x.to_bytes(coord_size, "big")
-            + C.y.to_bytes(coord_size, "big")
-            + P.x.to_bytes(coord_size, "big")
-            + P.y.to_bytes(coord_size, "big")
-        )
-        print(f"[{poc_dt_id}] Computed challenge e: {e}")
-
-        v = []
-        for ki, value in zip(k_values, scaled_data):
-            s = schnorr_signature_component(ki, e, value, q)
-            v.append(s)
-        print(f"[{poc_dt_id}] Computed signature components v: {v}")
-        
-        u = schnorr_signature_component(kr, e, secrect_key, q)
-        print(f"[{poc_dt_id}] Computed signature component u: {u}")
-
-        cm = CryptoManager(self.key_manager)
-        c_t, c_m, hM = cm.encrypt_data(data)
-
+        print(f"[{poc_dt_id}] Hashed data point hM: {hM.hex()}")
 
         payload = {
             "src_dt_id": poc_dt_id,
             "dest_dt_id": dest_dt_id,
             "curve": "P384",
-            "u": u,
-            "R": {
-                "x": R.x,
-                "y": R.y
-            },
-            "C": {
-                "x": C.x,
-                "y": C.y
-            },
-            "v": v,
-            "c_t": {
-                "x": c_t.x,
-                "y": c_t.y
-            },
-            "c_m": {
-                "x": c_m.x,
-                "y": c_m.y
+            "M": {
+                "x": M.x,
+                "y": M.y
             },
             "hM": hM.hex(),
             "Torg": time.time()
@@ -215,7 +126,7 @@ class CommunicationManager:
         try:
             s.connect((EDGE_IP, EDGE_PORT))
             s.sendall((json.dumps(payload) + "\n").encode())
-            print(f"[{poc_dt_id}] Sent encrypted data to edge server at {EDGE_IP}:{EDGE_PORT}")
+            print(f"[{poc_dt_id}] Sent data to edge server at {EDGE_IP}:{EDGE_PORT}")
             s.close()
         except ConnectionRefusedError:
             print(f"[{poc_dt_id}] Edge server not available")
@@ -226,7 +137,7 @@ class CommunicationManager:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             server.bind(("0.0.0.0", DATA_PORT))
             server.listen(5)
-            print(f"[{poc_dt_id}] Listening for re-encrypted data from {EDGE_IP}:{EDGE_PORT}...")
+            print(f"[{poc_dt_id}] Listening for data from {EDGE_IP}:{EDGE_PORT}...")
 
             while True:
                 conn, addr = server.accept()
@@ -274,31 +185,11 @@ class CommunicationManager:
             print(f"[{poc_dt_id}] Timestamp check passed: Tproxy={Tproxy}, current_time={time.time()}")
 
         CURVE = curve.P384
-        R = Point(
-            data["R"]["x"],
-            data["R"]["y"],
+        M = Point(
+            data["M"]["x"],
+            data["M"]["y"],
             CURVE
         )
-        C = Point(
-            data["C"]["x"],
-            data["C"]["y"],
-            CURVE
-        )
-        u = data["u"]
-        v = data["v"]
-        CT_prime = Point(
-            data["c_t_prime"]["x"],
-            data["c_t_prime"]["y"],
-            CURVE
-        )
-        CM = Point(
-            data["c_m"]["x"],
-            data["c_m"]["y"],
-            CURVE
-        )
-
-        sk_dst_inv = pow(self.key_manager.private_key, -1, CURVE.q)
-        M = CM - (sk_dst_inv * CT_prime)
         print(f"[{poc_dt_id}] Decrypted point M: ({M.x}, {M.y})")
 
         coord_size = (CURVE.q.bit_length() + 7) // 8
@@ -317,29 +208,6 @@ class CommunicationManager:
         # right now count has to be hardcoded, can be sent as part of payload in future
         m = decode_reals(M, 7)
         print(f"[{poc_dt_id}] Decrypted data: {m}")
-
-        Q = [derive_Gi(i) for i in range(1, len(m) + 1)]
-
-        e = hash_to_scalar(
-            b"".join(
-                Q_i.x.to_bytes(coord_size, "big") + Q_i.y.to_bytes(coord_size, "big") for Q_i in Q
-            ) + R.x.to_bytes(coord_size, "big") + R.y.to_bytes(coord_size, "big") + C.x.to_bytes(coord_size, "big") + C.y.to_bytes(coord_size, "big") + self.key_manager.P.x.to_bytes(coord_size, "big") + self.key_manager.P.y.to_bytes(coord_size, "big")
-        )
-
-
-        left_side = None
-        for i, vi in enumerate(v, start=1):
-            Qi = Q[i-1]
-            term = vi * Qi
-            left_side = term if left_side is None else left_side + term
-        
-        left_side = left_side + u * self.key_manager.P
-
-        right_side = R + (e % CURVE.q) * C
-        if left_side == right_side:
-            print(f"[{poc_dt_id}] Signature verification successful, data authenticity confirmed")
-        else:
-            print(f"[{poc_dt_id}] Signature verification failed")
             
 
     def start_receiver_thread(self):
@@ -406,7 +274,7 @@ class CommunicationManager:
             print("="*40)
 
             # Save to JSON
-            filename = f"stats_{poc_dt_id}.json"
+            filename = f"no_crypto_stats_{poc_dt_id}.json"
             try:
                 with open(filename, "w") as f:
                     json.dump(output_data, f, indent=4)
