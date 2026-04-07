@@ -12,7 +12,7 @@ from utils.db.edge_db_setup import KeyStore
 load_dotenv()
 
 DESTINATION_REGISTRY = {}
-DATA_RECEIVE_PORT = int(os.getenv("REAL_EDGE_PORT", 8084))
+DATA_RECEIVE_PORT = int(os.getenv("EDGE_PORT", 8082))
 DATA_FORWARD_PORT = int(os.getenv("DATA_PORT", 8081))
 KEYS_RECEIVE_PORT = int(os.getenv("EDGE_KEYS_PORT", 8083))
 TA_IP = os.getenv("TA_IP")

@@ -5,7 +5,7 @@ import time
 # === CONFIG ===
 FAKE_EDGE_PORT = 8082        # same as EDGE_PORT (we hijack it)
 REAL_EDGE_IP = "127.0.0.1"   # change to actual edge IP
-REAL_EDGE_PORT = 8084        # move real edge to another port
+REAL_EDGE_PORT = 8083        # move real edge to another port
 
 LOG_FILE = "mitm_logs.txt"
 
