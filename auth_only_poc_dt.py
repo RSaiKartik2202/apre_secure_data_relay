@@ -23,7 +23,7 @@ KEYS_PORT = int(os.getenv("KEYS_PORT", 8080))
 DATA_PORT = int(os.getenv("DATA_PORT", 8081))
 TA_IP = os.getenv("TA_IP")
 EDGE_IP = os.getenv("EDGE_IP")
-EDGE_PORT = int(os.getenv("EDGE_PORT", 8082))
+EDGE_PORT = int(os.getenv("REAL_EDGE_PORT", 8084))
 
 PRECISION = 10**6
 
